@@ -107,7 +107,7 @@ Navigate to [http://localhost:8000/](http://localhost:8000/) in your web browser
 │   ├── index.html          # Main Web UI for the chat interface.
 │   └── assets/             # Static assets like images and logos.
 ├── data/                   # Data storage for scraped content and generated caches.
-│   ├── materialy/          # Raw downloaded documents (PDFs, scenarios).
+│   ├── documents/          # Raw downloaded documents (PDFs, scenarios).
 │   ├── traces/             # Individual JSON knowledge traces per PDF.
 │   ├── sessions/           # Live user session mappings and histories.
 │   └── master_session.json # The master session used for context cloning.
