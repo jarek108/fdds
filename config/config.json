@@ -10,5 +10,6 @@
     "master_session_file": "data/master_session.json"
   },
   "base_url_prefix": "/documents/",
-  "moodle_url": "https://edukacja.fdds.pl"
+  "moodle_url": "https://edukacja.fdds.pl",
+  "audio_recording_timeout_s": 30
 }

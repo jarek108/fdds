@@ -176,8 +176,8 @@
         </div>
     </div>
     <div id="input-area">
-        <button id="mic-button" title="Nagraj pytanie">🎤</button>
         <input type="text" id="question-input" placeholder="Wpisz pytanie......" autocomplete="off">
+        <button id="mic-button" title="Nagraj pytanie">🎤</button>
         <button id="send-button">Wyślij</button>
     </div>
 
@@ -191,6 +191,18 @@
         let mediaRecorder = null;
         let audioChunks = [];
         let isRecording = false;
+        let recordingTimeoutId = null;
+        let recordingTimeoutS = 30; // Default
+
+        // Fetch config for timeout
+        fetch('/api/config')
+            .then(res => res.json())
+            .then(data => {
+                if (data.audio_recording_timeout_s) {
+                    recordingTimeoutS = data.audio_recording_timeout_s;
+                }
+            })
+            .catch(err => console.error('Error fetching config:', err));
 
         // Generate a unique ID for this tab session
         const chatId = 'client_' + Math.random().toString(36).substring(2, 15);
@@ -201,6 +213,7 @@
                 micButton.classList.remove('recording');
                 micButton.innerText = '🎤';
                 isRecording = false;
+                clearTimeout(recordingTimeoutId);
             } else {
                 try {
                     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -224,6 +237,13 @@
                     micButton.classList.add('recording');
                     micButton.innerText = '⏹';
                     isRecording = true;
+
+                    recordingTimeoutId = setTimeout(() => {
+                        if (isRecording) {
+                            alert(`Maksymalny czas nagrania to ${recordingTimeoutS} sekund. Nagranie zostanie zakończone i wysłane automatycznie.`);
+                            toggleRecording();
+                        }
+                    }, recordingTimeoutS * 1000);
                 } catch (err) {
                     alert('Nie można uzyskać dostępu do mikrofonu: ' + err.message);
                 }
@@ -301,7 +321,7 @@
             // 1. Append user message and keep reference to update it later with audio player
             let userMsgBubble;
             if (audioBase64) {
-                userMsgBubble = appendMessage('🎤 [Wiadomość głosowa]', 'user');
+                userMsgBubble = appendMessage(question ? question : '🎤 [Wiadomość głosowa]', 'user');
             } else {
                 userMsgBubble = appendMessage(question, 'user');
             }
@@ -350,10 +370,24 @@
             }
         }
 
-        sendButton.addEventListener('click', () => askQuestion());
+        sendButton.addEventListener('click', () => {
+            if (isRecording) {
+                toggleRecording();
+            } else {
+                askQuestion();
+            }
+        });
+        
         micButton.addEventListener('click', toggleRecording);
+        
         questionInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') askQuestion();
+            if (e.key === 'Enter') {
+                if (isRecording) {
+                    toggleRecording();
+                } else {
+                    askQuestion();
+                }
+            }
         });
     </script>
 </body>

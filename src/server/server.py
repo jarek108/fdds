@@ -111,6 +111,17 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
     """Manages chat requests and serving PDF/static files."""
     
     def do_GET(self):
+        if self.path == '/api/config':
+            config = get_config()
+            safe_config = {
+                "audio_recording_timeout_s": config.get("audio_recording_timeout_s", 30)
+            }
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps(safe_config).encode('utf-8'))
+            return
+
         # Securely serve user audio files (only if the filename contains the current session's chatId)
         if self.path.startswith('/audio/'):
             filename = urllib.parse.unquote(self.path[len('/audio/'):])
