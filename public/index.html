@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Baza Wiedzy FDDS</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: #f4f4f9;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            margin: 0;
+        }
+
+        #chat-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .message {
+            max-width: 80%;
+            padding: 12px 16px;
+            border-radius: 15px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            font-size: 14px;
+            position: relative;
+        }
+
+        .stats-details {
+            font-size: 10px;
+            color: #888;
+            margin-top: 8px;
+            text-align: right;
+            cursor: help;
+            border-top: 1px solid #eee;
+            padding-top: 4px;
+            position: relative;
+        }
+
+        .stats-details:hover::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: 100%;
+            right: 0;
+            background: #333;
+            color: #fff;
+            padding: 8px;
+            border-radius: 5px;
+            white-space: pre;
+            z-index: 100;
+            font-family: monospace;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        }
+
+        .user {
+            align-self: flex-end;
+            background-color: #E83F4B;
+            color: white;
+            border-bottom-right-radius: 2px;
+        }
+
+        .gemini {
+            align-self: flex-start;
+            background-color: white;
+            border: 1px solid #ddd;
+            border-bottom-left-radius: 2px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+
+        .error {
+            align-self: center;
+            background-color: #ffe5e5;
+            color: #d00;
+            border: 1px solid #fcc;
+            border-radius: 5px;
+        }
+
+        #input-area {
+            padding: 20px;
+            background-color: white;
+            border-top: 1px solid #ddd;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        #question-input {
+            flex: 1;
+            padding: 12px;
+            border: 1px solid #ccc;
+            border-radius: 25px;
+            outline: none;
+            font-size: 14px;
+        }
+
+        #question-input:focus {
+            border-color: #E83F4B;
+        }
+
+        #send-button, #mic-button {
+            background-color: #E83F4B;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #mic-button {
+            background-color: #666;
+            width: 45px;
+            height: 45px;
+            padding: 0;
+            border-radius: 50%;
+        }
+
+        #mic-button.recording {
+            background-color: #E83F4B;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(232, 63, 75, 0.7); }
+            70% { transform: scale(1.1); box-shadow: 0 0 0 10px rgba(232, 63, 75, 0); }
+            100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(232, 63, 75, 0); }
+        }
+
+        #send-button:hover, #mic-button:hover {
+            opacity: 0.9;
+        }
+
+        #send-button:disabled, #mic-button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+            animation: none;
+        }
+
+        .loading {
+            font-style: italic;
+            color: #888;
+            margin-bottom: 10px;
+        }
+
+        a {
+            color: #0056b3;
+            text-decoration: underline;
+        }
+
+        .user a {
+            color: #e6f2ff;
+        }
+    </style>
+</head>
+
+<body>
+    <header
+        style="background-color: white; padding: 15px; border-bottom: 1px solid #ddd; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 4px rgba(0,0,0,0.05); gap: 15px;">
+        <img src="/assets/images/fdds_logo.svg" alt="Logo FDDS" style="height: 90px;">
+        <h1 style="margin: 0; font-size: 20px; color: #E83F4B; font-weight: bold;"></h1>
+    </header>
+    <div id="chat-container">
+        <div class="message gemini">Cześć! Zapytaj mnie o dowolne materiały i informacje o <strong> FDDS </strong>!
+        </div>
+    </div>
+    <div id="input-area">
+        <button id="mic-button" title="Nagraj pytanie">🎤</button>
+        <input type="text" id="question-input" placeholder="Wpisz pytanie......" autocomplete="off">
+        <button id="send-button">Wyślij</button>
+    </div>
+
+    <script>
+        const chatContainer = document.getElementById('chat-container');
+        const questionInput = document.getElementById('question-input');
+        const sendButton = document.getElementById('send-button');
+        const micButton = document.getElementById('mic-button');
+
+        // Audio recording state
+        let mediaRecorder = null;
+        let audioChunks = [];
+        let isRecording = false;
+
+        // Generate a unique ID for this tab session
+        const chatId = 'client_' + Math.random().toString(36).substring(2, 15);
+
+        async function toggleRecording() {
+            if (isRecording) {
+                mediaRecorder.stop();
+                micButton.classList.remove('recording');
+                micButton.innerText = '🎤';
+                isRecording = false;
+            } else {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    mediaRecorder = new MediaRecorder(stream);
+                    audioChunks = [];
+
+                    mediaRecorder.ondataavailable = (event) => {
+                        audioChunks.push(event.data);
+                    };
+
+                    mediaRecorder.onstop = async () => {
+                        const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                        const base64Audio = await blobToBase64(audioBlob);
+                        askQuestion(null, base64Audio);
+                        
+                        // Stop all tracks to release the microphone
+                        stream.getTracks().forEach(track => track.stop());
+                    };
+
+                    mediaRecorder.start();
+                    micButton.classList.add('recording');
+                    micButton.innerText = '⏹';
+                    isRecording = true;
+                } catch (err) {
+                    alert('Nie można uzyskać dostępu do mikrofonu: ' + err.message);
+                }
+            }
+        }
+
+        function blobToBase64(blob) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    const base64String = reader.result.split(',')[1];
+                    resolve(base64String);
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+            });
+        }
+
+        function appendMessage(text, sender, stats = null, audioUrl = null) {
+            const div = document.createElement('div');
+            div.className = `message ${sender}`;
+
+            // 1. Handle Text/Markdown
+            let contentHtml = '';
+            if (text) {
+                // Simple markdown link parser: [Text](URL)
+                let formattedText = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, p1, p2) => {
+                    let url = p2;
+                    if (url.startsWith('data/')) url = '/' + url;
+                    else if (url.match(/^[a-zA-Z]:\\/)) {
+                        let encodedPath = encodeURIComponent(url.replace(/\\/g, '/'));
+                        url = `/files/${encodedPath}`;
+                    }
+                    return `<a href="${url}" target="_blank" rel="noopener noreferrer">${p1}</a>`;
+                });
+
+                // Render basic bolding: **Text**
+                formattedText = formattedText.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+                contentHtml += `<div>${formattedText}</div>`;
+            }
+
+            // 2. Handle Audio Player
+            if (audioUrl) {
+                contentHtml += `<audio controls src="${audioUrl}" style="margin-top: 8px; max-width: 100%; display: block; height: 35px;"></audio>`;
+            }
+
+            div.innerHTML = contentHtml;
+
+            // 3. Add stats details
+            if (stats && sender === 'gemini') {
+                const statsDiv = document.createElement('div');
+                statsDiv.className = 'stats-details';
+                statsDiv.innerText = 'szczegóły';
+                
+                const tooltipText = `Czas: ${stats.duration}\n` +
+                                   `Tokeny In: ${stats.input}\n` +
+                                   `Tokeny Out: ${stats.output}\n` +
+                                   `Tokeny Thoughts: ${stats.thoughts}\n` +
+                                   `Tokeny Cache: ${stats.cached}\n` +
+                                   `Koszt: $${stats.cost.toFixed(6)}`;
+                
+                statsDiv.setAttribute('data-tooltip', tooltipText);
+                div.appendChild(statsDiv);
+            }
+
+            chatContainer.appendChild(div);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+            return div;
+        }
+
+        async function askQuestion(textOverride = null, audioBase64 = null) {
+            const question = textOverride !== null ? textOverride : questionInput.value.trim();
+            if (!question && !audioBase64) return;
+
+            // 1. Append user message and keep reference to update it later with audio player
+            let userMsgBubble;
+            if (audioBase64) {
+                userMsgBubble = appendMessage('🎤 [Wiadomość głosowa]', 'user');
+            } else {
+                userMsgBubble = appendMessage(question, 'user');
+            }
+            
+            questionInput.value = '';
+
+            const loadingMsg = appendMessage('Chwilka, zastanawiam się...', 'loading');
+            sendButton.disabled = true;
+            micButton.disabled = true;
+
+            try {
+                const response = await fetch('/ask', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        question: question,
+                        audio: audioBase64,
+                        chatId: chatId
+                    })
+                });
+
+                const data = await response.json();
+                chatContainer.removeChild(loadingMsg);
+
+                if (data.error) {
+                    appendMessage(`Error: ${data.error}`, 'error');
+                } else {
+                    // 2. If audio was sent, update the USER'S bubble with the playback player
+                    if (data.audioUrl && userMsgBubble) {
+                        const audioPlayerHtml = `<audio controls src="${data.audioUrl}" style="margin-top: 8px; max-width: 100%; display: block; height: 35px;"></audio>`;
+                        userMsgBubble.innerHTML += audioPlayerHtml;
+                    }
+
+                    // 3. Append Gemini response (without audioUrl, as it belongs to the user)
+                    if (data.answer) {
+                        appendMessage(data.answer, 'gemini', data.stats);
+                    }
+                }
+            } catch (err) {
+                if (loadingMsg.parentNode) chatContainer.removeChild(loadingMsg);
+                appendMessage(`Connection error: ${err.message}`, 'error');
+            } finally {
+                sendButton.disabled = false;
+                micButton.disabled = false;
+                questionInput.focus();
+            }
+        }
+
+        sendButton.addEventListener('click', () => askQuestion());
+        micButton.addEventListener('click', toggleRecording);
+        questionInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') askQuestion();
+        });
+    </script>
+</body>
+
+</html>

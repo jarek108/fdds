@@ -205,3 +205,25 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# FDDS Project Artifacts & Dynamic Data
+data/materialy/
+data/traces/
+data/sessions/
+data/html_cache/
+data/knowledge_bases/
+data/master_knowledge_base.md
+data/master_session.json
+data/user_audio/
+data/moodle_map.json
+data/pdf_cache_template.json
+data/*.txt
+data/*.json
+
+# Application secrets
+config/.env
+config/.env.*
+!config/.env.example
+
+# Experimentation
+playground/
