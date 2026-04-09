@@ -101,6 +101,31 @@ def save_chat_mapping(mapping_file: str):
         except Exception as e:
             logger.error(f"Failed to save session mapping: {e}")
 
+cost_tracking: Dict[str, Any] = {"sessions": {}, "hours": {}, "days": {}}
+cost_tracking_lock = threading.Lock()
+
+def load_cost_tracking(filepath: str):
+    """Loads cost tracking from file into memory."""
+    global cost_tracking
+    with cost_tracking_lock:
+        if os.path.exists(filepath):
+            try:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    cost_tracking.update(data)
+            except Exception as e:
+                logger.error(f"Failed to load cost tracking: {e}")
+
+def save_cost_tracking(filepath: str):
+    """Saves cost tracking from memory to disk."""
+    global cost_tracking
+    with cost_tracking_lock:
+        try:
+            os.makedirs(os.path.dirname(filepath), exist_ok=True)
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(cost_tracking, f)
+        except Exception as e:
+            logger.error(f"Failed to save cost tracking: {e}")
 
 class ThreadedHTTPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     """Server extension allowing request handling in separate threads."""
@@ -206,6 +231,52 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
                 
                 logger.info(f"Processing query for chatId {chat_id} (Audio: {bool(audio_base64)})")
                 
+                limits = config.get("limits", {})
+                session_limit = limits.get("session_usd", 0.05)
+                hourly_limit = limits.get("hourly_usd", 0.50)
+                daily_limit = limits.get("daily_usd", 2.00)
+
+                current_hour = time.strftime("%Y-%m-%d:%H")
+                current_day = time.strftime("%Y-%m-%d")
+
+                with cost_tracking_lock:
+                    session_cost = cost_tracking.get("sessions", {}).get(chat_id, 0.0)
+                    hourly_cost = cost_tracking.get("hours", {}).get(current_hour, 0.0)
+                    daily_cost = cost_tracking.get("days", {}).get(current_day, 0.0)
+
+                if session_limit > 0 and session_cost >= session_limit:
+                    self.send_response(200)
+                    self.send_header('Content-type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({
+                        "answer": f"⚠️ Przekroczono limit kosztów dla tej sesji ({session_limit} USD). Odśwież stronę, aby rozpocząć nową sesję.",
+                        "stats": {"duration": "0.0s", "input": 0, "output": 0, "thoughts": 0, "cached": 0, "cost": 0.0},
+                        "audioUrl": None
+                    }).encode())
+                    return
+
+                if hourly_limit > 0 and hourly_cost >= hourly_limit:
+                    self.send_response(200)
+                    self.send_header('Content-type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({
+                        "answer": f"⚠️ Przekroczono globalny limit godzinowy serwera ({hourly_limit} USD). Spróbuj ponownie później.",
+                        "stats": {"duration": "0.0s", "input": 0, "output": 0, "thoughts": 0, "cached": 0, "cost": 0.0},
+                        "audioUrl": None
+                    }).encode())
+                    return
+
+                if daily_limit > 0 and daily_cost >= daily_limit:
+                    self.send_response(200)
+                    self.send_header('Content-type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({
+                        "answer": f"⚠️ Przekroczono globalny limit dzienny serwera ({daily_limit} USD). Spróbuj ponownie jutro.",
+                        "stats": {"duration": "0.0s", "input": 0, "output": 0, "thoughts": 0, "cached": 0, "cost": 0.0},
+                        "audioUrl": None
+                    }).encode())
+                    return
+
                 with chat_mapping_lock:
                     gemini_session_id = chat_mapping.get(chat_id)
 
@@ -277,6 +348,21 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
                             flattened_stats["thoughts"] += t.get("thoughts", 0)
                             flattened_stats["cached"] += t.get("cached", 0)
                     flattened_stats["cost"] = calculate_cost(model, flattened_stats["input"], flattened_stats["output"] + flattened_stats["thoughts"], flattened_stats["cached"])
+
+                    # Update and save cost tracking
+                    cost = flattened_stats["cost"]
+                    with cost_tracking_lock:
+                        if "sessions" not in cost_tracking: cost_tracking["sessions"] = {}
+                        if "hours" not in cost_tracking: cost_tracking["hours"] = {}
+                        if "days" not in cost_tracking: cost_tracking["days"] = {}
+                        
+                        cost_tracking["sessions"][chat_id] = cost_tracking["sessions"].get(chat_id, 0.0) + cost
+                        cost_tracking["hours"][current_hour] = cost_tracking["hours"].get(current_hour, 0.0) + cost
+                        cost_tracking["days"][current_day] = cost_tracking["days"].get(current_day, 0.0) + cost
+                    
+                    cost_file = os.path.join(paths['sessions_dir'], 'cost_tracking.json')
+                    save_cost_tracking(cost_file)
+
                 except Exception as stats_err:
                     logger.warning(f"Error compiling stats: {stats_err}")
 
@@ -302,6 +388,8 @@ def run_server(port: int = 8000):
     config = get_config()
     mapping_file = os.path.join(config['paths']['sessions_dir'], 'chat_sessions.json')
     load_chat_mapping(mapping_file)
+    cost_file = os.path.join(config['paths']['sessions_dir'], 'cost_tracking.json')
+    load_cost_tracking(cost_file)
     load_doc_index()
     
     def handler_factory(*args, **kwargs):

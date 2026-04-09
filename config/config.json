@@ -11,5 +11,10 @@
   },
   "base_url_prefix": "/documents/",
   "moodle_url": "https://edukacja.fdds.pl",
-  "audio_recording_timeout_s": 30
+  "audio_recording_timeout_s": 30,
+  "limits": {
+    "session_usd": 0.05,
+    "hourly_usd": 0.50,
+    "daily_usd": 2.00
+  }
 }
