@@ -139,17 +139,16 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_error(404, "Audio file not found")
                 return
 
-        if self.path.startswith('/materialy/'):
+        if self.path.startswith('/documents/'):
             config = get_config()
-            materialy_root = os.path.abspath(config['paths']['materialy_dir'])
-            rel_path = urllib.parse.unquote(self.path[len('/materialy/'):])
-            file_path = os.path.abspath(os.path.join(materialy_root, rel_path))
-            
-            if os.path.commonpath([materialy_root]) != os.path.commonpath([materialy_root, file_path]):
+            documents_root = os.path.abspath(config['paths']['documents_dir'])
+            rel_path = urllib.parse.unquote(self.path[len('/documents/'):])
+            file_path = os.path.abspath(os.path.join(documents_root, rel_path))
+
+            if os.path.commonpath([documents_root]) != os.path.commonpath([documents_root, file_path]):
                 logger.warning(f"Blocked attempt to access outside materials directory: {file_path}")
                 self.send_error(403, "Access denied")
-                return
-            
+                return            
             if os.path.exists(file_path) and os.path.isfile(file_path):
                 self.send_response(200)
                 mime_type, _ = mimetypes.guess_type(file_path)

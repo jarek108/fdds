@@ -2,7 +2,7 @@
 Extracts knowledge from raw PDFs into lightweight JSON traces using parallel processing.
 
 Prerequisite: 
-Requires raw PDF documents to be present in the `data/materialy/` directory (or a custom directory).
+Requires raw PDF documents to be present in the `data/documents/` directory (or a custom directory).
 
 This script relies on the Google Generative AI SDK (configured via `src/utils/run_gemini.py`)
 to read PDF files and generate structured JSON summaries ("traces") that capture the essence
@@ -22,7 +22,7 @@ Usage Examples:
     python src/processor/create_document_traces.py --dir custom/pdf/path --max-cost 2.50
 
 Arguments:
-    --dir                 Optional: Custom directory containing PDFs to process. Defaults to `data/materialy/`.
+    --dir                 Optional: Custom directory containing PDFs to process. Defaults to `data/documents/`.
     --max-docs            Optional: Limit the maximum number of documents to process. Useful for testing.
     --max-cost            Optional: Stop processing if the estimated API cost exceeds this dollar amount.
     --max-tokens          Target length for the "Zawartość" section of the summary (default: 200).
@@ -113,7 +113,7 @@ def parse_model_response(text: str) -> Dict[str, str]:
         
     return sections
 
-def process_single_pdf(pdf_path: str, materialy_dir: str, job_dir: str, session_folder: str, model: str, 
+def process_single_pdf(pdf_path: str, documents_dir: str, job_dir: str, session_folder: str, model: str, 
                        max_tokens: int, force_regeneration: bool):
     """Worker function to process one PDF."""
     global totals
@@ -121,7 +121,7 @@ def process_single_pdf(pdf_path: str, materialy_dir: str, job_dir: str, session_
     if stop_flag.is_set():
         return
 
-    rel_pdf_path = os.path.relpath(pdf_path, materialy_dir).replace('\\', '/')
+    rel_pdf_path = os.path.relpath(pdf_path, documents_dir).replace('\\', '/')
     trace_rel_path = rel_pdf_path.rsplit('.', 1)[0] + ".json"
     trace_path = os.path.join(job_dir, trace_rel_path)
     
@@ -201,7 +201,7 @@ def create_document_traces(target_dir: Optional[str] = None, max_docs: Optional[
     config = get_config()
     paths = config['paths']
     
-    materialy_dir = target_dir or paths['materialy_dir']
+    documents_dir = target_dir or paths['documents_dir']
     traces_root = paths['traces_dir']
     if "doc_tracing_model" not in config:
         raise KeyError("Missing required 'doc_tracing_model' in config/config.json")
@@ -216,9 +216,9 @@ def create_document_traces(target_dir: Optional[str] = None, max_docs: Optional[
     run_timestamp = time.strftime("%Y-%m-%d_%H-%M-%S")
     session_folder = f"{run_timestamp}_trace_creation"
 
-    pdf_files = glob.glob(os.path.join(materialy_dir, "**/*.pdf"), recursive=True)
+    pdf_files = glob.glob(os.path.join(documents_dir, "**/*.pdf"), recursive=True)
     if not pdf_files:
-        logger.warning(f"No PDFs found in {materialy_dir}")
+        logger.warning(f"No PDFs found in {documents_dir}")
         return
 
     print(f"Starting Knowledge Extraction for {len(pdf_files)} documents using {model}...")
@@ -246,7 +246,7 @@ def create_document_traces(target_dir: Optional[str] = None, max_docs: Optional[
             if max_docs and submitted_count >= max_docs:
                 break
             
-            rel_pdf_path = os.path.relpath(pdf_path, materialy_dir).replace('\\', '/')
+            rel_pdf_path = os.path.relpath(pdf_path, documents_dir).replace('\\', '/')
             trace_rel_path = rel_pdf_path.rsplit('.', 1)[0] + ".json"
             trace_path = os.path.join(job_dir, trace_rel_path)
 
@@ -262,7 +262,7 @@ def create_document_traces(target_dir: Optional[str] = None, max_docs: Optional[
 
             futures.append(executor.submit(
                 process_single_pdf, 
-                pdf_path, materialy_dir, job_dir, session_folder, model, 
+                pdf_path, documents_dir, job_dir, session_folder, model, 
                 max_tokens, force_regeneration
             ))
             submitted_count += 1

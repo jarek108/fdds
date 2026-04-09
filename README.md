@@ -17,7 +17,7 @@ Directly querying Large Language Models (LLMs) with massive raw binary files (li
 The application is modularized into three core pillars:
 
 ### 1. Data Scraping & Ingestion
-Located in `src/scraper/`. These scripts securely interact with the FDDS website and Moodle platforms to scrape HTML structures, map course hierarchies, and autonomously download raw source documents (PDFs, brochures, scenarios) into the local `data/materialy/` repository.
+Located in `src/scraper/`. These scripts securely interact with the FDDS website and Moodle platforms to scrape HTML structures, map course hierarchies, and autonomously download raw source documents (PDFs, brochures, scenarios) into the local `data/documents/` repository.
 
 ### 2. Knowledge Processing
 Located in `src/processor/`. The caching layer orchestrates the knowledge extraction pipeline:
@@ -63,7 +63,7 @@ This system operates as a strict pipeline. Each step depends on the output of th
 
 #### 1. Generate Knowledge Traces (Optional if already built)
 * **What it does:** Extracts knowledge from raw PDFs into lightweight JSON traces.
-* **Prerequisite:** Requires raw PDF documents to be present in the `data/materialy/` directory.
+* **Prerequisite:** Requires raw PDF documents to be present in the `data/documents/` directory.
 
 ```bash
 python src/processor/create_document_traces.py

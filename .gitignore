@@ -207,7 +207,7 @@ marimo/_lsp/
 __marimo__/
 
 # FDDS Project Artifacts & Dynamic Data
-data/materialy/
+data/documents/
 data/traces/
 data/sessions/
 data/html_cache/
