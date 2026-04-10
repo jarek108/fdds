@@ -38,13 +38,18 @@ import argparse
 import sys
 import logging
 import threading
+import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional, Dict, Any, List
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
-from src.utils.run_gemini import run_gemini
+from src.utils.gemini_cli_headless import run_gemini_cli_headless
 from src.utils.config import get_config, setup_logging
 from src.utils.calc_stats import calculate_cost
+
+# Load environment variables
+from dotenv import load_dotenv
+load_dotenv(os.path.join(os.path.dirname(__file__), '../../config/.env'))
 
 logger = logging.getLogger("create_document_traces")
 
@@ -127,39 +132,37 @@ def process_single_pdf(pdf_path: str, documents_dir: str, job_dir: str, session_
     
     # Check if file exists to skip processing
     if os.path.exists(trace_path) and not force_regeneration:
-        with stats_lock:
-            totals["skipped_docs"] += 1
-            totals["docs_processed"] += 1
-            current_idx = totals["docs_processed"]
-        with print_lock:
-            print(f"{current_idx:<3} | {'00:00':<8} | {'-':<10} | {'-':<10} | {'-':<8} | {'-':<5} | {'-':<8} | {'-':<8} | {'SKIP':<6} | {rel_pdf_path}")
+        # (Skipped logic is handled in the main loop caller for count accuracy)
         return
 
     start_time = time.time()
     formatted_prompt = BASE_PROMPT.format(max_tokens=max_tokens)
     instruction_text = f"{formatted_prompt.strip()}\nANALIZUJ DOKUMENT:"
 
-    answer, result_info, error = run_gemini(model, prompt=instruction_text, session_folder=session_folder, files=[pdf_path])
+    try:
+        session = run_gemini_cli_headless(
+            prompt=instruction_text,
+            model_id=model,
+            files=[pdf_path]
+        )
+        answer = session.text
+        session_id = session.session_id
+        stats = session.stats
+    except Exception as e:
+        duration = time.time() - start_time
+        time_str = f"{int(duration // 60):02d}:{int(duration % 60):02d}"
+        with print_lock:
+            print(f"{'ERR':<3} | {time_str:<8} | {'-':<10} | {'-':<10} | {'-':<8} | {'-':<5} | {'-':<8} | {'-':<8} | {'ERROR':<6} | {rel_pdf_path}")
+            logger.error(f"Error in {rel_pdf_path}: {e}")
+        return
     
     duration = time.time() - start_time
     time_str = f"{int(duration // 60):02d}:{int(duration % 60):02d}"
     
-    if error or not answer:
-        with print_lock:
-            print(f"{'ERR':<3} | {time_str:<8} | {'-':<10} | {'-':<10} | {'-':<8} | {'-':<5} | {'-':<8} | {'-':<8} | {'ERROR':<6} | {rel_pdf_path}")
-            if error: logger.error(f"Error in {rel_pdf_path}: {error}")
-        return
-        
-    session_id = result_info.get("session_id", "N/A")
-    stats_raw = result_info.get("stats", {}) or {}
-    model_stats = stats_raw.get("models", {}).get(model, {}).get("tokens", {})
-    
-    in_tk, out_tk, cached_tk, thought_tk = (
-        model_stats.get("input", 0), 
-        model_stats.get("candidates", 0), 
-        model_stats.get("cached", 0), 
-        model_stats.get("thoughts", 0)
-    )
+    in_tk = stats.get("inputTokens", 0)
+    out_tk = stats.get("outputTokens", 0)
+    cached_tk = stats.get("cachedTokens", 0)
+    thought_tk = stats.get("thoughtTokens", 0)
     
     cost = calculate_cost(model, in_tk, out_tk + thought_tk, cached_tk)
     structured_data = parse_model_response(answer)

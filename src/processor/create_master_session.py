@@ -21,11 +21,16 @@ import urllib.parse
 import json
 import logging
 import time
+import shutil
 from typing import Dict, List, Any
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
 from src.utils.config import get_config, setup_logging
-from src.utils.run_gemini import run_gemini
+from src.utils.gemini_cli_headless import run_gemini_cli_headless
+
+# Load environment variables
+from dotenv import load_dotenv
+load_dotenv(os.path.join(os.path.dirname(__file__), '../../config/.env'))
 
 logger = logging.getLogger("create_master_session")
 
@@ -157,21 +162,20 @@ def create_master_session(target_dir: str) -> None:
         "7. Jeśli rozumiesz te zasady i bazę wiedzy, odpowiedz tylko jednym słowem: READY."
     )
 
-    answer, metadata, error = run_gemini(
-        model, 
-        prompt=full_prompt, 
-        session_folder="..", 
-        session_name="master_session.json"
-    )
-    if error:
-        logger.error(f"Error creating Master Session: {error}")
+    try:
+        session = run_gemini_cli_headless(
+            prompt=full_prompt,
+            model_id=model
+        )
+        # Copy to our local project structure
+        master_session_target = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../data/master_session.json'))
+        shutil.copy2(session.session_path, master_session_target)
+        
+        logger.info(f"Created Master Session: {session.session_id}")
+        logger.info(f"Master Session saved to {master_session_target}")
+    except Exception as e:
+        logger.error(f"Error creating Master Session: {e}")
         return
-
-    logger.info(f"Created Master Session: {metadata.get('session_id')}")
-    if metadata.get('session_path'):
-        logger.info(f"Master Session saved to {metadata.get('session_path')}")
-    else:
-        logger.warning("Could not find the generated session file to archive.")
 
 if __name__ == "__main__":
     setup_logging()

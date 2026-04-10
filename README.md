@@ -40,7 +40,7 @@ While traditional SDKs (`google-genai`) or end-user tools like NotebookLM are po
 
 1. **Handling Sensitive Educational Contexts:** The educational materials from FDDS deal extensively with sensitive and heavy topics, such as child abuse prevention, violence, and suicide prevention. While standard SDKs and cloud APIs often trigger overly aggressive, unconfigurable safety filters (false-positive blocks) on legitimate educational materials, Gemini CLI provides better out-of-the-box tuning for these contexts. This allows the AI to process vital educational documents without being continuously censored, while still strictly adhering to Google's safety policies and Terms of Service (we are not bypassing or disabling required safety guardrails, but rather utilizing an interface optimized for complex context).
 2. **Overcoming NotebookLM's Limitations:** NotebookLM is an excellent SaaS tool, but it imposes a hard limit of 200 source documents per notebook. By building a custom pipeline with Gemini CLI, we can compile an unlimited number of documents into a single, highly dense Master Session.
-3. **Granular Control & Automation:** Unlike closed SaaS platforms, the CLI acts as a programmable layer. It inherently supports autonomous execution (`--yolo`), built-in JSON parsing (`--json`), and instant context caching (via file-based session cloning with `-r`), allowing us to build the complex "Master Session" architecture, the Correction Layer, and custom link post-processing that wouldn't be possible otherwise.
+3. **Granular Control & Automation:** Unlike closed SaaS platforms, the CLI acts as a programmable layer. It inherently supports autonomous execution (`--yolo`), built-in JSON parsing (`-o json`), and instant context caching (via file-based session cloning with `-r`), allowing us to build the complex "Master Session" architecture, the Correction Layer, and custom link post-processing that wouldn't be possible otherwise.
 
 ---
 
@@ -135,10 +135,10 @@ Navigate to [http://localhost:8000/](http://localhost:8000/) in your web browser
     ├── server/             # Threaded HTTP server and chat API logic.
     │   └── server.py         # Hosts the Web UI, API endpoints, and manages session cloning.
     └── utils/              # Shared helper modules (CLI wrappers, config, stats).
-        ├── calc_stats.py     # Calculates LLM token usage and estimated API costs.
-        ├── config.py         # Centralized configuration loader and logging setup.
-        ├── run_gemini.py     # Programmatic wrapper for executing the Gemini CLI and history management.
-        └── ...               # Additional temporary inspection and mapping utilities.
+        ├── gemini_cli_headless.py # Standalone programmatic wrapper for Gemini CLI.
+        ├── calc_stats.py          # Calculates LLM token usage and estimated API costs.
+        ├── config.py              # Centralized configuration loader and logging setup.
+        └── ...                    # Additional temporary inspection and mapping utilities.
 ```
 
 ## 📊 Cost Optimization & Analytics

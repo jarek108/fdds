@@ -28,13 +28,18 @@ import uuid
 import time
 import re
 import base64
+import shutil
 from typing import Dict, Any
 
 # Add project root to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
-from src.utils.run_gemini import run_gemini, sync_session_to_cli
+from src.utils.gemini_cli_headless import run_gemini_cli_headless
 from src.utils.config import get_config, setup_logging
 from src.utils.calc_stats import calculate_cost
+
+# Load environment variables
+from dotenv import load_dotenv
+load_dotenv(os.path.join(os.path.dirname(__file__), '../../config/.env'))
 
 logger = logging.getLogger("server")
 
@@ -361,24 +366,33 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
                 with chat_mapping_lock:
                     gemini_session_id = chat_mapping.get(chat_id)
 
-                if not gemini_session_id:
+                user_session_file = None
+                if gemini_session_id:
+                    user_session_file = os.path.join(paths['sessions_dir'], "answering", f"session-{gemini_session_id}.json")
+                    if not os.path.exists(user_session_file):
+                        # Try to find it if the filename differs (fallback)
+                        matches = glob.glob(os.path.join(paths['sessions_dir'], "answering", f"*{gemini_session_id[:8]}*.json"))
+                        if matches:
+                            user_session_file = matches[0]
+                        else:
+                            user_session_file = None # Will trigger re-cloning
+
+                if not user_session_file:
                     if not master_session_file or not os.path.exists(master_session_file):
                         self.send_json_error(500, "Master Session file missing. Run create_master_session.py first.")
                         return
                     
-                    new_gemini_id = str(uuid.uuid4())
+                    gemini_session_id = str(uuid.uuid4())
+                    user_session_file = os.path.join(paths['sessions_dir'], "answering", f"session-{gemini_session_id}.json")
+                    
                     with open(master_session_file, 'r', encoding='utf-8') as f:
                         master_data = json.load(f)
+                    master_data['sessionId'] = gemini_session_id
                     
-                    master_data['sessionId'] = new_gemini_id
-                    
-                    # Direct project-local cloning
-                    cloned_session_file = os.path.join(paths['sessions_dir'], "answering", f"session-cloned-{new_gemini_id[:8]}.json")
-                    os.makedirs(os.path.dirname(cloned_session_file), exist_ok=True)
-                    with open(cloned_session_file, 'w', encoding='utf-8') as f:
+                    os.makedirs(os.path.dirname(user_session_file), exist_ok=True)
+                    with open(user_session_file, 'w', encoding='utf-8') as f:
                         json.dump(master_data, f, indent=2, ensure_ascii=False)
                     
-                    gemini_session_id = new_gemini_id
                     with chat_mapping_lock:
                         chat_mapping[chat_id] = gemini_session_id
                     save_chat_mapping(mapping_file)
@@ -401,34 +415,41 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
 
                 # Run model
                 start_time = time.time()
-                answer, result_info, error = run_gemini(
-                    model_id=model,
-                    prompt=user_query,
-                    session_folder="answering",
-                    session_id=gemini_session_id,
-                    files=gemini_files
-                )
-                duration = time.time() - start_time
-                
-                if error:
-                    logger.error(f"Gemini API Error: {error}")
-                    self.send_json_error(500, error)
+                try:
+                    session = run_gemini_cli_headless(
+                        prompt=user_query,
+                        model_id=model,
+                        files=gemini_files,
+                        session_to_resume=user_session_file
+                    )
+                    # Copy updated session back to project
+                    shutil.copy2(session.session_path, user_session_file)
+                except Exception as e:
+                    logger.error(f"Gemini CLI Error: {e}")
+                    self.send_json_error(500, str(e))
                     return
-
+                    
+                duration = time.time() - start_time
                 logger.info(f"Received answer for {chat_id} (Time: {duration:.1f}s)")
                 
                 # Stats
-                raw_stats = result_info.get("stats", {})
-                flattened_stats = {"duration": f"{duration:.1f}s", "input": 0, "output": 0, "thoughts": 0, "cached": 0, "cost": 0.0}
+                s = session.stats
+                flattened_stats = {
+                    "duration": f"{duration:.1f}s", 
+                    "input": s.get("inputTokens", 0), 
+                    "output": s.get("outputTokens", 0), 
+                    "thoughts": s.get("thoughtTokens", 0), 
+                    "cached": s.get("cachedTokens", 0), 
+                    "cost": 0.0
+                }
+                
                 try:
-                    if "models" in raw_stats:
-                        for model_name, mdata in raw_stats["models"].items():
-                            t = mdata.get("tokens", {})
-                            flattened_stats["input"] += t.get("input", 0)
-                            flattened_stats["output"] += t.get("candidates", 0)
-                            flattened_stats["thoughts"] += t.get("thoughts", 0)
-                            flattened_stats["cached"] += t.get("cached", 0)
-                    flattened_stats["cost"] = calculate_cost(model, flattened_stats["input"], flattened_stats["output"] + flattened_stats["thoughts"], flattened_stats["cached"])
+                    flattened_stats["cost"] = calculate_cost(
+                        model, 
+                        flattened_stats["input"], 
+                        flattened_stats["output"] + flattened_stats["thoughts"], 
+                        flattened_stats["cached"]
+                    )
 
                     # Update and save cost tracking
                     cost = flattened_stats["cost"]
@@ -447,7 +468,7 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
                 except Exception as stats_err:
                     logger.warning(f"Error compiling stats: {stats_err}")
 
-                final_answer = translate_doc_links(answer)
+                final_answer = translate_doc_links(session.text)
 
                 self.send_response(200)
                 self.send_header('Content-type', 'application/json')
