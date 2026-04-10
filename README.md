@@ -21,7 +21,7 @@ Located in `src/scraper/`. These scripts securely interact with the FDDS website
 
 ### 2. Knowledge Processing
 Located in `src/processor/`. The caching layer orchestrates the knowledge extraction pipeline:
-* **Trace Generation:** A robust LLM (e.g., Gemini 1.5 Pro) processes raw PDFs to generate individual JSON "traces" containing summaries, context, and core content.
+* **Trace Generation:** A robust LLM (e.g., Gemini 1.5 Pro) processes raw PDFs to generate individual JSON "traces" (via `gemini_cli_headless.py`) containing summaries, context, and core content.
 * **Correction Layer:** Live, high-priority manual overrides can be maintained via `data/correction.txt`. These act as hotfixes to outdated or conflicting data across all scraped documents without requiring expensive re-parsing of raw PDFs.
 * **Compilation:** Traces and the Correction Layer are merged in-memory into a single, comprehensive Markdown text block.
 * **Master Session Initialization:** The final compiled knowledge base is injected into the LLM context to establish the cached master session (`master_session.json`). To prevent hallucinated titles, the LLM is instructed to only return raw references like `[doc_1]`.
