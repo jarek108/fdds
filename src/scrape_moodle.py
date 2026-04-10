@@ -11,7 +11,7 @@ import re
 import logging
 from typing import Dict, List, Optional, Tuple, Set, Any
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
 from src.utils.config import get_config, setup_logging
 
 logger = logging.getLogger("moodle_scraper")

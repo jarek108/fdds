@@ -20,14 +20,14 @@ The application is modularized into three core pillars:
 Located in `src/scraper/`. These scripts securely interact with the FDDS website and Moodle platforms to scrape HTML structures, map course hierarchies, and autonomously download raw source documents (PDFs, brochures, scenarios) into the local `data/documents/` repository.
 
 ### 2. Knowledge Processing
-Located in `src/processor/`. The caching layer orchestrates the knowledge extraction pipeline:
-* **Trace Generation:** A robust LLM (e.g., Gemini 1.5 Pro) processes raw PDFs to generate individual JSON "traces" (via `gemini_cli_headless.py`) containing summaries, context, and core content.
+Located in `src/`. The caching layer orchestrates the knowledge extraction pipeline:
+* **Trace Generation:** A robust LLM (e.g., Gemini 1.5 Pro) processes raw PDFs to generate individual JSON "traces" (via `src/utils/gemini_cli_headless.py`) containing summaries, context, and core content.
 * **Correction Layer:** Live, high-priority manual overrides can be maintained via `data/correction.txt`. These act as hotfixes to outdated or conflicting data across all scraped documents without requiring expensive re-parsing of raw PDFs.
 * **Compilation:** Traces and the Correction Layer are merged in-memory into a single, comprehensive Markdown text block.
 * **Master Session Initialization:** The final compiled knowledge base is injected into the LLM context to establish the cached master session (`master_session.json`). To prevent hallucinated titles, the LLM is instructed to only return raw references like `[doc_1]`.
 
 ### 3. API & Web UI Serving
-Located in `src/server/`. A concurrent, multi-threaded Python HTTP server handles:
+Located in `src/`. A concurrent, multi-threaded Python HTTP server handles:
 * **Chat Endpoints (`/ask`):** Clones sessions for isolated multi-user chatting. Post-processes LLM responses to safely translate raw `[doc_1]` references into full, clickable Markdown URLs (`[Real Title](URL)`) using the master index.
 * **Live Corrections (`/correction`):** A dedicated UI to edit global, high-priority knowledge overrides (`data/correction.txt`). Saving updates automatically triggers a background rebuild of the Master Session.
 * **Static Assets:** Securely serves local static assets and PDF materials.
@@ -56,17 +56,17 @@ While traditional SDKs (`google-genai`) or end-user tools like NotebookLM are po
   ```
 
 ### ⚡ Quick Start (TL;DR)
-If you want to run the entire pipeline with default settings, you can use these commands. We use the `create_document_traces.py` script to parse PDFs into JSON traces. You can control its behavior with arguments such as `--max-tokens` to set the summary length or `--max-docs` to limit how many files to process for a quick test.
+If you want to run the entire pipeline with default settings, you can use these commands. We use the `src/create_document_traces.py` script to parse PDFs into JSON traces. You can control its behavior with arguments such as `--max-tokens` to set the summary length or `--max-docs` to limit how many files to process for a quick test.
 
 ```bash
 # Example: Process up to 5 documents, limiting the output to ~200 tokens each
-python src/processor/create_document_traces.py --max-docs 5 --max-tokens 200
+python src/create_document_traces.py --max-docs 5 --max-tokens 200
 
 # Then, compile the master session using the generated traces
-python src/processor/create_master_session.py data/traces/200_gemini-3-flash-preview
+python src/create_master_session.py data/traces/200_gemini-3-flash-preview
 
 # Finally, start the server
-python src/server/server.py
+python src/server.py
 ```
 
 ---
@@ -80,7 +80,7 @@ This system operates as a strict pipeline. Each step depends on the output of th
 * **Prerequisite:** Requires raw PDF documents to be present in the `data/documents/` directory.
 
 ```bash
-python src/processor/create_document_traces.py
+python src/create_document_traces.py
 ```
 
 #### 2. Compile Knowledge Base & Initialize Master Session
@@ -90,7 +90,7 @@ python src/processor/create_document_traces.py
 **⚠️ Important:** You must execute this step anytime the underlying traces are updated.
 
 ```bash
-python src/processor/create_master_session.py data/traces/200_gemini-3-flash-preview
+python src/create_master_session.py data/traces/200_gemini-3-flash-preview
 ```
 
 #### 3. Start the Application Server
@@ -100,7 +100,7 @@ python src/processor/create_master_session.py data/traces/200_gemini-3-flash-pre
 Run the HTTP server to serve the frontend interface, handle API requests, and securely route document downloads.
 
 ```bash
-python src/server/server.py
+python src/server.py
 ```
 
 #### 4. Access the Interface
@@ -126,19 +126,16 @@ Navigate to [http://localhost:8000/](http://localhost:8000/) in your web browser
 │   ├── sessions/           # Live user session mappings and histories.
 │   └── master_session.json # The master session used for context cloning.
 └── src/                    # Source code modularized by domain.
-    ├── scraper/            # Data gathering and downloading scripts.
-    │   ├── scrape.py         # Scrapes general FDDS resources and structures.
-    │   └── scrape_moodle.py  # Interacts with Moodle to map courses and download PDFs.
-    ├── processor/          # Data parsing, KB compilation, and session initialization.
-    │   ├── create_master_session.py      # Merges JSON traces into KB and primes the master session.
-    │   └── create_document_traces.py     # Processes raw PDFs to extract insights into JSON traces.
-    ├── server/             # Threaded HTTP server and chat API logic.
-    │   └── server.py         # Hosts the Web UI, API endpoints, and manages session cloning.
-    └── utils/              # Shared helper modules (CLI wrappers, config, stats).
-        ├── gemini_cli_headless.py # Standalone programmatic wrapper for Gemini CLI.
-        ├── calc_stats.py          # Calculates LLM token usage and estimated API costs.
-        ├── config.py              # Centralized configuration loader and logging setup.
-        └── ...                    # Additional temporary inspection and mapping utilities.
+    ├── create_master_session.py      # Merges JSON traces into KB and primes the master session.
+    ├── create_document_traces.py     # Processes raw PDFs to extract insights into JSON traces.
+    ├── server.py                     # Hosts the Web UI, API endpoints, and manages session cloning.
+    ├── scrape.py                     # Scrapes general FDDS resources and structures.
+    ├── scrape_moodle.py              # Interacts with Moodle to map courses and download PDFs.
+    └── utils/                        # Shared helper modules (CLI wrappers, config, stats).
+        ├── gemini_cli_headless.py    # Standalone programmatic wrapper for Gemini CLI.
+        ├── calc_stats.py             # Calculates LLM token usage and estimated API costs.
+        ├── config.py                 # Centralized configuration loader and logging setup.
+        └── ...                       # Additional temporary inspection and mapping utilities.
 ```
 
 ## 📊 Cost Optimization & Analytics

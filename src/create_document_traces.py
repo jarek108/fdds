@@ -10,16 +10,16 @@ of each document. These traces are later used to build the master knowledge base
 
 Usage Examples:
     # Process all PDFs using default settings (5 workers, ~200 tokens per summary)
-    python src/processor/create_document_traces.py
+    python src/create_document_traces.py
 
     # Process a maximum of 10 documents, targeting a 500-token summary length
-    python src/processor/create_document_traces.py --max-docs 10 --max-tokens 500
+    python src/create_document_traces.py --max-docs 10 --max-tokens 500
 
     # Force regeneration of traces even if they already exist, using 10 parallel workers
-    python src/processor/create_document_traces.py --force-regeneration --workers 10
+    python src/create_document_traces.py --force-regeneration --workers 10
 
     # Process a specific directory with a cost limit
-    python src/processor/create_document_traces.py --dir custom/pdf/path --max-cost 2.50
+    python src/create_document_traces.py --dir custom/pdf/path --max-cost 2.50
 
 Arguments:
     --dir                 Optional: Custom directory containing PDFs to process. Defaults to `data/documents/`.
@@ -42,14 +42,14 @@ import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional, Dict, Any, List
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
 from src.utils.gemini_cli_headless import run_gemini_cli_headless
 from src.utils.config import get_config, setup_logging
 from src.utils.calc_stats import calculate_cost
 
 # Load environment variables
 from dotenv import load_dotenv
-load_dotenv(os.path.join(os.path.dirname(__file__), '../../config/.env'))
+load_dotenv(os.path.join(os.path.dirname(__file__), '../config/.env'))
 
 logger = logging.getLogger("create_document_traces")
 
@@ -309,3 +309,4 @@ if __name__ == "__main__":
     parser.add_argument("--workers", type=int, default=5, help="Number of parallel threads.")
     args = parser.parse_args()
     create_document_traces(args.dir, args.max_docs, args.max_cost, args.max_tokens, args.force_regeneration, args.workers)
+_regeneration, args.workers)

@@ -9,7 +9,7 @@ This server handles the `/ask` endpoint, manages audio uploads, tracks per-user 
 
 Usage Examples:
     # Start the server on the default port (8000)
-    python src/server/server.py
+    python src/server.py
 
 Arguments (when run programmatically):
     port: The port number to listen on (default: 8000).
@@ -32,14 +32,14 @@ import shutil
 from typing import Dict, Any
 
 # Add project root to sys.path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
 from src.utils.gemini_cli_headless import run_gemini_cli_headless
 from src.utils.config import get_config, setup_logging
 from src.utils.calc_stats import calculate_cost
 
 # Load environment variables
 from dotenv import load_dotenv
-load_dotenv(os.path.join(os.path.dirname(__file__), '../../config/.env'))
+load_dotenv(os.path.join(os.path.dirname(__file__), '../config/.env'))
 
 logger = logging.getLogger("server")
 
@@ -54,7 +54,7 @@ doc_index_lock = threading.Lock()
 def load_doc_index():
     """Parses data/master_knowledge_base.md to build doc_id -> url/title mapping."""
     global doc_index
-    kb_path = os.path.join(os.path.dirname(__file__), '../../data/master_knowledge_base.md')
+    kb_path = os.path.join(os.path.dirname(__file__), '../data/master_knowledge_base.md')
     if not os.path.exists(kb_path):
         logger.warning(f"Master knowledge base not found at {kb_path}. Links will not be translated.")
         return
@@ -152,7 +152,7 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
     
     def do_GET(self):
         if self.path == '/correction':
-            html_path = os.path.join(os.path.dirname(__file__), '../../public/correction.html')
+            html_path = os.path.join(os.path.dirname(__file__), '../public/correction.html')
             if os.path.exists(html_path):
                 self.send_response(200)
                 self.send_header('Content-type', 'text/html; charset=utf-8')
@@ -164,7 +164,7 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
             return
 
         if self.path == '/api/correction':
-            correction_path = os.path.join(os.path.dirname(__file__), '../../data/correction.txt')
+            correction_path = os.path.join(os.path.dirname(__file__), '../data/correction.txt')
             if os.path.exists(correction_path):
                 self.send_response(200)
                 self.send_header('Content-type', 'text/plain; charset=utf-8')
@@ -202,7 +202,7 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_error(403, "Access denied: Unauthorized session")
                 return
 
-            audio_dir = os.path.join(os.path.dirname(__file__), '../../data/user_audio')
+            audio_dir = os.path.join(os.path.dirname(__file__), '../data/user_audio')
             safe_filename = os.path.basename(urllib.parse.urlparse(filename).path)
             file_path = os.path.abspath(os.path.join(audio_dir, safe_filename))
             
@@ -256,13 +256,13 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
                 request_json = json.loads(post_data)
                 
                 content = request_json.get('content', '')
-                correction_path = os.path.join(os.path.dirname(__file__), '../../data/correction.txt')
+                correction_path = os.path.join(os.path.dirname(__file__), '../data/correction.txt')
                 
                 with open(correction_path, 'w', encoding='utf-8') as f:
                     f.write(content)
                     
                 # Parse master KB to find original trace folder
-                kb_path = os.path.join(os.path.dirname(__file__), '../../data/master_knowledge_base.md')
+                kb_path = os.path.join(os.path.dirname(__file__), '../data/master_knowledge_base.md')
                 source_dir = "data/traces/200_gemini-3-flash-preview" # Fallback
                 if os.path.exists(kb_path):
                     with open(kb_path, 'r', encoding='utf-8') as f:
@@ -273,7 +273,7 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
                 
                 # Execute create_master_session.py
                 import subprocess
-                script_path = os.path.join(os.path.dirname(__file__), '../processor/create_master_session.py')
+                script_path = os.path.join(os.path.dirname(__file__), './create_master_session.py')
                 result = subprocess.run([sys.executable, script_path, source_dir], capture_output=True, text=True)
                 
                 if result.returncode != 0:
@@ -401,7 +401,7 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
                 gemini_files = []
                 audio_url = None
                 if audio_base64:
-                    audio_dir = os.path.join(os.path.dirname(__file__), '../../data/user_audio')
+                    audio_dir = os.path.join(os.path.dirname(__file__), '../data/user_audio')
                     os.makedirs(audio_dir, exist_ok=True)
                     timestamp = time.strftime("%Y-%m-%d_%H-%M-%S")
                     audio_filename = f"{timestamp}_{chat_id}.wav"
