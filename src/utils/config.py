@@ -1,3 +1,9 @@
+"""
+Centralized configuration manager for the FDDS project.
+Handles project root discovery, config.json loading, path resolution, 
+and global logging initialization.
+"""
+
 import os
 import json
 import logging

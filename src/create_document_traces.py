@@ -4,7 +4,7 @@ Extracts knowledge from raw PDFs into lightweight JSON traces using parallel pro
 Prerequisite: 
 Requires raw PDF documents to be present in the `data/documents/` directory (or a custom directory).
 
-This script relies on the Google Generative AI SDK (configured via `src/utils/run_gemini.py`)
+This script utilizes the `gemini_cli_headless.py` wrapper to interact with the Gemini CLI 
 to read PDF files and generate structured JSON summaries ("traces") that capture the essence
 of each document. These traces are later used to build the master knowledge base.
 

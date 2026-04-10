@@ -1,3 +1,18 @@
+"""
+Standalone programmatic wrapper for the Gemini CLI in headless mode.
+This module allows executing prompts, attaching files, and resuming sessions 
+using the Gemini CLI, returning structured session data and statistics.
+
+Usage Examples:
+    # Use as a library
+    from src.utils.gemini_cli_headless import run_gemini_cli_headless
+    session = run_gemini_cli_headless("Hello world")
+    print(session.text, session.stats)
+
+    # Resume from a local file path
+    session = run_gemini_cli_headless("Continue...", session_to_resume="data/sessions/user_1.json")
+"""
+
 import subprocess
 import os
 import json

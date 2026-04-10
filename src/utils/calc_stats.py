@@ -1,3 +1,16 @@
+"""
+Calculates token usage and estimated API costs for Gemini models.
+Supports auditing local session files or individual token counts.
+
+Usage Examples:
+    # Use as a library
+    from src.utils.calc_stats import calculate_cost
+    usd = calculate_cost("gemini-1.5-pro", 1000, 500, 2000)
+
+    # Audit a directory of session JSONs via CLI
+    python src/utils/calc_stats.py data/sessions/
+"""
+
 import json
 import argparse
 import os

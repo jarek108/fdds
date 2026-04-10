@@ -1,3 +1,23 @@
+"""
+Interacts with the FDDS Moodle platform to scrape HTML structures, map course hierarchies, 
+and autonomously download raw source documents (PDFs, brochures, scenarios).
+
+Prerequisite: 
+Requires 'moodle_url' and paths configured in `config/config.json`.
+
+Usage Examples:
+    # Map the Moodle platform with default settings (max 50 nodes, depth 3)
+    python src/crawler.py
+
+    # Map with custom limits
+    python src/crawler.py --nodes 100 --depth 5 --url https://edukacja.fdds.pl/
+
+Arguments:
+    --url     Starting URL for the crawl.
+    --depth   Maximum depth of the BFS crawl.
+    --nodes   Maximum number of nodes to process.
+"""
+
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse, urlunparse, parse_qs
