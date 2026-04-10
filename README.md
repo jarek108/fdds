@@ -111,7 +111,8 @@ python src/server.py
 ```
 
 #### 5. Access the Interface
-Navigate to [http://localhost:8000/](http://localhost:8000/) in your web browser to interact with the Assistant.
+* **Chat UI:** Navigate to [http://localhost:8000/](http://localhost:8000/) in your web browser to interact with the Assistant.
+* **Live Corrections UI:** Navigate to [http://localhost:8000/correction](http://localhost:8000/correction) to hotfix the knowledge base.
 
 ---
 
