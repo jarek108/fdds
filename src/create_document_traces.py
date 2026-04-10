@@ -43,7 +43,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional, Dict, Any, List
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
-from src.utils.gemini_cli_headless import run_gemini_cli_headless
+from gemini_cli_headless import run_gemini_cli_headless
 from src.utils.config import get_config, setup_logging
 from src.utils.calc_stats import calculate_cost
 
@@ -295,7 +295,7 @@ def create_document_traces(target_dir: Optional[str] = None, max_docs: Optional[
     print("BATCH PROCESSING COMPLETE")
     print(f"Newly Processed: {totals['docs_processed'] - totals['skipped_docs']} | Skipped: {totals['skipped_docs']}")
     print(f"Total Tokens In: {totals['input']} | Out: {totals['output']} | Cost: ${totals['cost']:.6f}")
-    print(f"\n[!] To update the knowledge base, run:\n    python src/processor/create_master_session.py {job_dir}")
+    print(f"\n[!] To update the knowledge base, run:\n    python src/create_master_session.py {job_dir}")
     print("=" * 120)
 
 if __name__ == "__main__":
@@ -309,4 +309,3 @@ if __name__ == "__main__":
     parser.add_argument("--workers", type=int, default=5, help="Number of parallel threads.")
     args = parser.parse_args()
     create_document_traces(args.dir, args.max_docs, args.max_cost, args.max_tokens, args.force_regeneration, args.workers)
-_regeneration, args.workers)

@@ -33,7 +33,7 @@ from typing import Dict, Any
 
 # Add project root to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
-from src.utils.gemini_cli_headless import run_gemini_cli_headless
+from gemini_cli_headless import run_gemini_cli_headless
 from src.utils.config import get_config, setup_logging
 from src.utils.calc_stats import calculate_cost
 
