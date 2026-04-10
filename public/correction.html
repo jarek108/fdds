@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edycja Poprawek do Bazy Wiedzy</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f9;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        h1 {
+            color: #333;
+        }
+        .editor-container {
+            width: 100%;
+            max-width: 800px;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        textarea {
+            width: 100%;
+            height: 400px;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 14px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            resize: vertical;
+            box-sizing: border-box;
+        }
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            color: white;
+            background-color: #007bff;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        #status {
+            font-weight: bold;
+            color: #28a745;
+        }
+        .error {
+            color: #dc3545 !important;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Poprawki do Bazy Wiedzy</h1>
+    
+    <div class="editor-container">
+        <textarea id="correctionText" placeholder="Ładowanie poprawek..."></textarea>
+        <div class="controls">
+            <span id="status"></span>
+            <button id="saveBtn">Zapisz poprawki</button>
+        </div>
+    </div>
+
+    <script>
+        const correctionText = document.getElementById('correctionText');
+        const saveBtn = document.getElementById('saveBtn');
+        const statusEl = document.getElementById('status');
+
+        function setStatus(msg, isError = false) {
+            statusEl.textContent = msg;
+            statusEl.className = isError ? 'error' : '';
+            setTimeout(() => {
+                if (statusEl.textContent === msg) {
+                    statusEl.textContent = '';
+                }
+            }, 3000);
+        }
+
+        async function loadCorrections() {
+            try {
+                correctionText.disabled = true;
+                const response = await fetch('/api/correction');
+                if (response.ok) {
+                    const text = await response.text();
+                    correctionText.value = text;
+                } else {
+                    setStatus('Nie udało się załadować poprawek.', true);
+                }
+            } catch (err) {
+                console.error(err);
+                setStatus('Błąd połączenia podczas ładowania.', true);
+            } finally {
+                correctionText.disabled = false;
+            }
+        }
+
+        async function saveCorrections() {
+            try {
+                saveBtn.disabled = true;
+                const originalBtnText = saveBtn.textContent;
+                saveBtn.textContent = 'Przetwarzanie...';
+                setStatus('Przetwarzanie...');
+                
+                const response = await fetch('/api/correction', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ content: correctionText.value })
+                });
+
+                if (response.ok) {
+                    setStatus('Wiedza zaktualizowana');
+                    alert('Wiedza zaktualizowana');
+                } else {
+                    const errorData = await response.json().catch(() => ({}));
+                    setStatus(errorData.error || 'Błąd w aktualizacji wiedzy', true);
+                    alert('Błąd w aktualizacji wiedzy');
+                }
+                saveBtn.textContent = originalBtnText;
+            } catch (err) {
+                console.error(err);
+                setStatus('Błąd w aktualizacji wiedzy', true);
+                alert('Błąd w aktualizacji wiedzy');
+                saveBtn.textContent = 'Zapisz poprawki';
+            } finally {
+                saveBtn.disabled = false;
+            }
+        }
+
+        saveBtn.addEventListener('click', saveCorrections);
+
+        // Ładowanie początkowe
+        loadCorrections();
+    </script>
+</body>
+</html>

@@ -65,11 +65,19 @@ def create_master_session(target_dir: str) -> None:
     # 1. Human-friendly (with URLs and IDs) for auditing and server lookup
     # 2. LLM-optimized (with IDs but NO URLs) to prevent hallucinations and save tokens
     
+    current_time = time.strftime("%Y-%m-%d %H:%M:%S")
+    
     human_kb_parts = [
+        "# Baza Wiedzy FDDS\n\n",
+        f"**Katalog źródłowy:** {target_dir}\n",
+        f"**Data utworzenia:** {current_time}\n\n",
+        "Ten dokument zawiera skondensowaną wiedzę z materiałów Fundacji Dajemy Dzieciom Siłę.\n\n"
+    ]
+    
+    llm_kb_parts = [
         "# Baza Wiedzy FDDS\n\n",
         "Ten dokument zawiera skondensowaną wiedzę z materiałów Fundacji Dajemy Dzieciom Siłę.\n\n"
     ]
-    llm_kb_parts = human_kb_parts.copy()
 
     for i, doc in enumerate(all_docs, 1):
         doc_id = f"doc_{i}"
@@ -89,6 +97,24 @@ def create_master_session(target_dir: str) -> None:
         llm_kb_parts.append(f"  <tytul>{title}</tytul>\n")
         llm_kb_parts.append(f"  <tresc>\n{doc['zawartosc']}\n  </tresc>\n")
         llm_kb_parts.append(f"</document>\n\n")
+
+    # Read and append live corrections if they exist
+    correction_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../data/correction.txt'))
+    if os.path.exists(correction_path):
+        try:
+            with open(correction_path, 'r', encoding='utf-8') as f:
+                correction_content = f.read().strip()
+            
+            if correction_content:
+                correction_section = f"\n\n# Bieżące Poprawki (Aktualizacje na żywo)\n\nPoniższe informacje to najnowsze poprawki, które mają najwyższy priorytet i nadpisują ewentualne sprzeczne informacje z powyższych dokumentów:\n\n{correction_content}\n"
+                
+                # Append as a plain section
+                human_kb_parts.append(correction_section)
+                llm_kb_parts.append(correction_section)
+                
+                logger.info("Successfully appended data/correction.txt to the knowledge base as a section.")
+        except Exception as e:
+            logger.error(f"Failed to read data/correction.txt: {e}")
 
     full_human_kb = "".join(human_kb_parts)
     full_llm_kb = "".join(llm_kb_parts)
@@ -123,11 +149,12 @@ def create_master_session(target_dir: str) -> None:
         f"{full_llm_kb}\n\n"
         "Zasady odpowiadania:\n"
         "1. Odpowiadaj na podstawie powyższej bazy wiedzy oraz kiedy musisz, ogólnej wiedzy o FDDS dostępnej publicznie.\n"
-        "2. Przy każdej informacji podawaj źródło. Na końcu odpowiedzi lub przy konkretnych akapitach zamieszczaj linki do dokumentów w formacie Markdown: [Tytuł](id).\n"
+        "2. BEZWZGLĘDNIE podawaj źródło informacji używając formatu linku Markdown: [Tytuł Dokumentu](id) (np. [Nasz Dokument](doc_1)). To jedyny akceptowalny sposób powoływania się na dokumenty. Nie używaj formatu 'Tytuł (id)'.\n"
         "3. Jako Cel Linku (URL) używaj WYŁĄCZNIE identyfikatora z atrybutu 'id' przypisanego do danego dokumentu (np. doc_1, doc_2).\n"
         "4. Używaj tagów <tytul> do nazywania dokumentów w tekście.\n"
         "5. Odpowiadaj tylko na pytania związane z działalnością FDDS. Na niezwiązane tematy czy żarty odpowiadaj 'Istnieję by pomagać osobom potrzebującym informacji w zakresie działania FDDS. Nie marnuj moich zasobów. Są ograniczone i zabraknie ich dla tych, którzy naprawdę ich potrzebują.'  \n"
-        "6. Jeśli rozumiesz te zasady i bazę wiedzy, odpowiedz tylko jednym słowem: READY."
+        "6. Ostatnia sekcja zawiera listę sprostowań ad. zdezaktualizowanych lub błędnych informacji w serwowanych dokumentach. Zawsze traktuj te informacje nadrzędnie w przypadku konfliktu z innymi danymi. Nigdy nie wspominaj i nie linkuj tej sekcji bezpośrednio. Mów tylko, że 'zgodnie z moją skorygowaną wiedzą jest tak a tak, lub informacje w dokumencie X Y są już nieaktualne'.\n"
+        "7. Jeśli rozumiesz te zasady i bazę wiedzy, odpowiedz tylko jednym słowem: READY."
     )
 
     answer, metadata, error = run_gemini(

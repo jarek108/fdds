@@ -43,11 +43,11 @@ chat_mapping: Dict[str, str] = {}
 chat_mapping_lock = threading.Lock()
 
 # Document ID to URL mapping
-doc_index: Dict[str, str] = {}
+doc_index: Dict[str, Dict[str, str]] = {}
 doc_index_lock = threading.Lock()
 
 def load_doc_index():
-    """Parses data/master_knowledge_base.md to build doc_id -> url mapping."""
+    """Parses data/master_knowledge_base.md to build doc_id -> url/title mapping."""
     global doc_index
     kb_path = os.path.join(os.path.dirname(__file__), '../../data/master_knowledge_base.md')
     if not os.path.exists(kb_path):
@@ -58,11 +58,14 @@ def load_doc_index():
     try:
         with open(kb_path, 'r', encoding='utf-8') as f:
             content = f.read()
-            # Regex to find <document id="doc_N"> followed by <url>...</url>
+            # Regex to find <document id="doc_N"> followed by <url>...</url> and <tytul>...</tytul>
             # Use dotall to match across lines
-            matches = re.finditer(r'<document id="(doc_\d+)">\s*<url>(.*?)</url>', content, re.DOTALL)
+            matches = re.finditer(r'<document id="(doc_\d+)">\s*<url>(.*?)</url>.*?<tytul>(.*?)</tytul>', content, re.DOTALL)
             for m in matches:
-                new_index[m.group(1)] = m.group(2).strip()
+                new_index[m.group(1)] = {
+                    "url": m.group(2).strip(),
+                    "tytul": m.group(3).strip()
+                }
         
         with doc_index_lock:
             doc_index = new_index
@@ -71,13 +74,20 @@ def load_doc_index():
         logger.error(f"Failed to parse master KB index: {e}")
 
 def translate_doc_links(text: str) -> str:
-    """Replaces Markdown links targets like (doc_1) with actual URLs."""
+    """Replaces document references like [doc_1] with actual Markdown links [Title](URL)."""
     with doc_index_lock:
         if not doc_index:
             return text
             
-    # Matches (doc_1), (doc_12) etc. only if inside a markdown link target area
-    return re.sub(r'\]\((doc_\d+)\)', lambda m: f"]({doc_index.get(m.group(1), m.group(1))})", text)
+    def replacer(m):
+        doc_id = m.group(1)
+        doc_info = doc_index.get(doc_id)
+        if doc_info:
+            return f"[{doc_info['tytul']}]({doc_info['url']})"
+        return m.group(0)
+
+    # Matches [doc_1], [doc_12] etc.
+    return re.sub(r'\[(doc_\d+)\]', replacer, text)
 
 def load_chat_mapping(mapping_file: str):
     """Loads session mappings from file into memory."""
@@ -136,6 +146,33 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
     """Manages chat requests and serving PDF/static files."""
     
     def do_GET(self):
+        if self.path == '/correction':
+            html_path = os.path.join(os.path.dirname(__file__), '../../public/correction.html')
+            if os.path.exists(html_path):
+                self.send_response(200)
+                self.send_header('Content-type', 'text/html; charset=utf-8')
+                self.end_headers()
+                with open(html_path, 'rb') as f:
+                    self.wfile.write(f.read())
+            else:
+                self.send_error(404, "Correction HTML not found")
+            return
+
+        if self.path == '/api/correction':
+            correction_path = os.path.join(os.path.dirname(__file__), '../../data/correction.txt')
+            if os.path.exists(correction_path):
+                self.send_response(200)
+                self.send_header('Content-type', 'text/plain; charset=utf-8')
+                self.end_headers()
+                with open(correction_path, 'rb') as f:
+                    self.wfile.write(f.read())
+            else:
+                self.send_response(200)
+                self.send_header('Content-type', 'text/plain; charset=utf-8')
+                self.end_headers()
+                self.wfile.write(b'')
+            return
+
         if self.path == '/api/config':
             config = get_config()
             safe_config = {
@@ -207,6 +244,50 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
         self.wfile.write(json.dumps({"error": message}).encode())
 
     def do_POST(self):
+        if self.path == '/api/correction':
+            try:
+                content_length = int(self.headers['Content-Length'])
+                post_data = self.rfile.read(content_length)
+                request_json = json.loads(post_data)
+                
+                content = request_json.get('content', '')
+                correction_path = os.path.join(os.path.dirname(__file__), '../../data/correction.txt')
+                
+                with open(correction_path, 'w', encoding='utf-8') as f:
+                    f.write(content)
+                    
+                # Parse master KB to find original trace folder
+                kb_path = os.path.join(os.path.dirname(__file__), '../../data/master_knowledge_base.md')
+                source_dir = "data/traces/200_gemini-3-flash-preview" # Fallback
+                if os.path.exists(kb_path):
+                    with open(kb_path, 'r', encoding='utf-8') as f:
+                        for line in f:
+                            if line.startswith("**Katalog źródłowy:**"):
+                                source_dir = line.split("**Katalog źródłowy:**")[1].strip()
+                                break
+                
+                # Execute create_master_session.py
+                import subprocess
+                script_path = os.path.join(os.path.dirname(__file__), '../processor/create_master_session.py')
+                result = subprocess.run([sys.executable, script_path, source_dir], capture_output=True, text=True)
+                
+                if result.returncode != 0:
+                    logger.error(f"Error creating master session: {result.stderr}\n{result.stdout}")
+                    self.send_json_error(500, "Błąd w aktualizacji wiedzy")
+                    return
+                
+                # Reload document index
+                load_doc_index()
+                
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": True}).encode())
+            except Exception as e:
+                logger.error(f"Error saving corrections: {e}")
+                self.send_json_error(500, "Błąd podczas zapisywania poprawek")
+            return
+
         if self.path == '/ask':
             try:
                 content_length = int(self.headers['Content-Length'])

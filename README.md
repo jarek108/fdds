@@ -22,11 +22,25 @@ Located in `src/scraper/`. These scripts securely interact with the FDDS website
 ### 2. Knowledge Processing
 Located in `src/processor/`. The caching layer orchestrates the knowledge extraction pipeline:
 * **Trace Generation:** A robust LLM (e.g., Gemini 1.5 Pro) processes raw PDFs to generate individual JSON "traces" containing summaries, context, and core content.
-* **Compilation:** Traces are merged in-memory into a single, comprehensive text block.
-* **Master Session Initialization:** The knowledge base is injected into the LLM context to establish the cached master session (`master_session.json`).
+* **Correction Layer:** Live, high-priority manual overrides can be maintained via `data/correction.txt`. These act as hotfixes to outdated or conflicting data across all scraped documents without requiring expensive re-parsing of raw PDFs.
+* **Compilation:** Traces and the Correction Layer are merged in-memory into a single, comprehensive Markdown text block.
+* **Master Session Initialization:** The final compiled knowledge base is injected into the LLM context to establish the cached master session (`master_session.json`). To prevent hallucinated titles, the LLM is instructed to only return raw references like `[doc_1]`.
 
 ### 3. API & Web UI Serving
-Located in `src/server/`. A concurrent, multi-threaded Python HTTP server handles backend API requests (`/ask`), clones sessions for isolated multi-user chatting, and securely serves local static assets and PDF materials.
+Located in `src/server/`. A concurrent, multi-threaded Python HTTP server handles:
+* **Chat Endpoints (`/ask`):** Clones sessions for isolated multi-user chatting. Post-processes LLM responses to safely translate raw `[doc_1]` references into full, clickable Markdown URLs (`[Real Title](URL)`) using the master index.
+* **Live Corrections (`/correction`):** A dedicated UI to edit global, high-priority knowledge overrides (`data/correction.txt`). Saving updates automatically triggers a background rebuild of the Master Session.
+* **Static Assets:** Securely serves local static assets and PDF materials.
+
+---
+
+## 🛠️ Why Gemini CLI as the Engine?
+
+While traditional SDKs (`google-genai`) or end-user tools like NotebookLM are popular, **Gemini CLI** was chosen as the core engine for this specific project due to several critical advantages:
+
+1. **Handling Sensitive Educational Contexts:** The educational materials from FDDS deal extensively with sensitive and heavy topics, such as child abuse prevention, violence, and suicide prevention. While standard SDKs and cloud APIs often trigger overly aggressive, unconfigurable safety filters (false-positive blocks) on legitimate educational materials, Gemini CLI provides better out-of-the-box tuning for these contexts. This allows the AI to process vital educational documents without being continuously censored, while still strictly adhering to Google's safety policies and Terms of Service (we are not bypassing or disabling required safety guardrails, but rather utilizing an interface optimized for complex context).
+2. **Overcoming NotebookLM's Limitations:** NotebookLM is an excellent SaaS tool, but it imposes a hard limit of 200 source documents per notebook. By building a custom pipeline with Gemini CLI, we can compile an unlimited number of documents into a single, highly dense Master Session.
+3. **Granular Control & Automation:** Unlike closed SaaS platforms, the CLI acts as a programmable layer. It inherently supports autonomous execution (`--yolo`), built-in JSON parsing (`--json`), and instant context caching (via file-based session cloning with `-r`), allowing us to build the complex "Master Session" architecture, the Correction Layer, and custom link post-processing that wouldn't be possible otherwise.
 
 ---
 
