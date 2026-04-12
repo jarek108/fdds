@@ -69,7 +69,7 @@ python src/create_document_traces.py --max-tokens 200
 python src/create_master_session.py data/traces/200_gemini-3-flash-preview
 
 # 4. Start the server
-python src/server.py
+python src/start_server.py
 ```
 
 ---
@@ -107,7 +107,7 @@ python src/create_master_session.py data/traces/200_gemini-3-flash-preview
 Run the HTTP server to serve the frontend interface, handle API requests, and securely route document downloads.
 
 ```bash
-python src/server.py
+python src/start_server.py
 ```
 
 #### 5. Access the Interface
@@ -137,7 +137,7 @@ python src/server.py
     ├── crawler.py                    # Interacts with Moodle to map courses and download PDFs.
     ├── create_master_session.py      # Merges JSON traces into KB and primes the master session.
     ├── create_document_traces.py     # Processes raw PDFs to extract insights into JSON traces.
-    ├── server.py                     # Hosts the Web UI, API endpoints, and manages session cloning.
+    ├── start_server.py               # Hosts the Web UI, API endpoints, and manages session cloning.
     └── utils/                        # Shared helper modules (CLI wrappers, config, stats).
         ├── gemini_cli_headless.py    # Standalone programmatic wrapper for Gemini CLI.
         ├── calc_stats.py             # Calculates LLM token usage and estimated API costs.

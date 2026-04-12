@@ -9,7 +9,7 @@ This server handles the `/ask` endpoint, manages audio uploads, tracks per-user 
 
 Usage Examples:
     # Start the server on the default port (8000)
-    python src/server.py
+    python src/start_server.py
 
 Arguments (when run programmatically):
     port: The port number to listen on (default: 8000).
