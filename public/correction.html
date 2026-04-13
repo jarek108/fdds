@@ -13,13 +13,15 @@
             display: flex;
             flex-direction: column;
             align-items: center;
+            height: 100vh;
+            box-sizing: border-box;
         }
         h1 {
             color: #333;
         }
         .editor-container {
             width: 100%;
-            max-width: 800px;
+            flex: 1;
             background: white;
             padding: 20px;
             border-radius: 8px;
@@ -27,16 +29,17 @@
             display: flex;
             flex-direction: column;
             gap: 15px;
+            box-sizing: border-box;
         }
         textarea {
             width: 100%;
-            height: 400px;
+            flex: 1;
             padding: 10px;
             font-family: monospace;
             font-size: 14px;
             border: 1px solid #ccc;
             border-radius: 4px;
-            resize: vertical;
+            resize: none;
             box-sizing: border-box;
         }
         .controls {
