@@ -270,6 +270,15 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
                 post_data = self.rfile.read(content_length)
                 request_json = json.loads(post_data)
                 
+                # Verify password
+                config = get_config()
+                expected_password = config.get('correction_password')
+                provided_password = request_json.get('password')
+                
+                if expected_password and provided_password != expected_password:
+                    self.send_json_error(401, "Nieprawidłowe hasło.")
+                    return
+                
                 content = request_json.get('content', '')
                 correction_path = os.path.join(os.path.dirname(__file__), '../data/correction.txt')
                 
