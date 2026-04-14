@@ -1,6 +1,7 @@
 {
   "doc_tracing_model": "gemini-3-flash-preview",
   "answer_model": "gemini-3-flash-preview",
+  "answer_model2": "gemini-3.1-flash-lite-preview",
   "paths": {
     "documents_dir": "data/documents",
     "traces_dir": "data/traces",

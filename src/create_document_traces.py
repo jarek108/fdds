@@ -143,7 +143,8 @@ def process_single_pdf(pdf_path: str, documents_dir: str, job_dir: str, session_
         session = run_gemini_cli_headless(
             prompt=instruction_text,
             model_id=model,
-            files=[pdf_path]
+            files=[pdf_path],
+            api_key=os.environ.get("GEMINI_API_KEY")
         )
         answer = session.text
         session_id = session.session_id
