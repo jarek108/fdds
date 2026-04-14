@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="pl">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel Administratora FDDS</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: #f0f2f5;
+            margin: 0;
+            padding: 0;
+            color: #1c1e21;
+        }
+
+        header {
+            background-color: #fff;
+            padding: 20px;
+            border-bottom: 1px solid #ddd;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+
+        header img {
+            height: 40px;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 30px auto;
+            padding: 0 20px;
+        }
+
+        .card {
+            background: #fff;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            margin-bottom: 25px;
+        }
+
+        h2 {
+            margin-top: 0;
+            color: #E83F4B;
+            font-size: 20px;
+            border-bottom: 2px solid #f0f2f5;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+
+        .auth-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255,255,255,0.95);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .auth-box {
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+
+        input[type="password"], input[type="text"] {
+            padding: 12px;
+            width: 250px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            margin-bottom: 15px;
+            font-size: 16px;
+        }
+
+        button {
+            padding: 12px 24px;
+            background-color: #E83F4B;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background-color: #c0343e;
+        }
+
+        button.secondary {
+            background-color: #606770;
+        }
+
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+
+        .tree-item {
+            display: flex;
+            align-items: center;
+            padding: 8px;
+            border-radius: 6px;
+            gap: 10px;
+        }
+
+        .tree-item:hover {
+            background-color: #f9f9f9;
+        }
+
+        .tree-item.hidden {
+            opacity: 0.5;
+            background-color: #eee;
+        }
+
+        .tree-item .icon { font-size: 18px; width: 24px; text-align: center; cursor: pointer; }
+        .tree-item .name { font-weight: 500; margin-right: 10px; }
+        .tree-item .inline-actions { display: flex; gap: 4px; align-items: center; }
+        .tree-item .actions { margin-left: auto; }
+
+        .btn-icon {
+            background: none;
+            border: none;
+            padding: 2px 5px;
+            cursor: pointer;
+            font-size: 14px;
+            border-radius: 4px;
+            color: #606770;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .btn-icon:hover {
+            background-color: #e4e6eb;
+            color: #E83F4B;
+        }
+
+        .tree-item.no-trace .name { color: #E83F4B; font-weight: bold; }
+        .trace-link {
+            font-size: 11px;
+            color: #0056b3;
+            text-decoration: none;
+            margin-left: 5px;
+            font-weight: normal;
+        }
+        .trace-link:hover { text-decoration: underline; }
+
+        #trace-viewer {
+            position: fixed;
+            top: 50px;
+            right: 20px;
+            width: 400px;
+            bottom: 20px;
+            background: white;
+            box-shadow: -5px 0 15px rgba(0,0,0,0.1);
+            border-radius: 12px;
+            display: none;
+            flex-direction: column;
+            z-index: 500;
+            border: 1px solid #ddd;
+        }
+
+        .trace-header {
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #f8f9fa;
+            border-radius: 12px 12px 0 0;
+        }
+
+        .trace-body {
+            padding: 15px;
+            overflow-y: auto;
+            flex: 1;
+            font-size: 13px;
+            white-space: pre-wrap;
+            font-family: monospace;
+        }
+
+        ul { list-style: none; padding-left: 20px; margin: 0; }
+
+        .sync-section {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+            text-align: center;
+        }
+
+        #sync-log {
+            width: 100%;
+            height: 150px;
+            background: #1c1e21;
+            color: #00ff00;
+            font-family: monospace;
+            font-size: 12px;
+            padding: 10px;
+            overflow-y: auto;
+            border-radius: 6px;
+            margin-top: 15px;
+            white-space: pre-wrap;
+            display: none;
+        }
+
+        .upload-zone {
+            border: 2px dashed #ddd;
+            padding: 20px;
+            text-align: center;
+            border-radius: 8px;
+            margin-top: 10px;
+            background: #fafafa;
+        }
+
+        .upload-zone:hover { border-color: #E83F4B; }
+
+        .hidden-tag {
+            font-size: 10px;
+            background: #606770;
+            color: white;
+            padding: 2px 6px;
+            border-radius: 4px;
+            text-transform: uppercase;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="auth-overlay" class="auth-overlay">
+        <div class="auth-box">
+            <img src="/assets/images/fdds_logo.svg" alt="Logo FDDS" style="height: 50px; margin-bottom: 20px;">
+            <h3>Wymagane hasło administratora</h3>
+            <input type="password" id="admin-password" placeholder="Hasło...">
+            <br>
+            <button onclick="checkAuth()">Zaloguj</button>
+        </div>
+    </div>
+
+    <header>
+        <div style="display: flex; align-items: center; gap: 15px;">
+            <img src="/assets/images/fdds_logo.svg" alt="Logo FDDS">
+            <h1 style="font-size: 18px; margin: 0;">Panel Administracyjny</h1>
+        </div>
+        <button class="secondary" onclick="logout()">Wyloguj</button>
+    </header>
+
+    <div class="container">
+        <div class="card sync-section">
+            <h2>Aktualizacja Wiedzy</h2>
+            <p>Kliknij poniższy przycisk po dodaniu lub ukryciu dokumentów, aby bot nauczył się zmian.</p>
+            <button id="sync-btn" onclick="runSync()" style="font-size: 18px; padding: 15px 40px;">🔄 Synchronizuj Bazę Wiedzy</button>
+            <div id="sync-log"></div>
+        </div>
+
+        <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2 style="margin: 0; border: none;">Zarządzanie Dokumentami</h2>
+                <div style="display: flex; gap: 10px;">
+                    <button class="secondary" onclick="showCreateFolder('')" title="Dodaj folder w głównym katalogu">📁+ Główny</button>
+                    <button class="secondary" onclick="showUpload('')" title="Prześlij PDF do głównego katalogu">↑+ Główny</button>
+                </div>
+            </div>
+            <div id="file-tree">Ładowanie plików...</div>
+        </div>
+    </div>
+
+    <!-- Modale (uproszczone jako prompty) -->
+
+    <div id="trace-viewer">
+        <div class="trace-header">
+            <h4 style="margin: 0;">Podgląd Trace (JSON)</h4>
+            <button class="btn-icon" onclick="closeTrace()" style="font-size: 20px;">×</button>
+        </div>
+        <div id="trace-content" class="trace-body"></div>
+    </div>
+
+    <script>
+        let password = localStorage.getItem('admin_pwd') || '';
+
+        if (password) {
+            document.getElementById('auth-overlay').style.display = 'none';
+            loadDocuments();
+        }
+
+        function checkAuth() {
+            password = document.getElementById('admin-password').value;
+            localStorage.setItem('admin_pwd', password);
+            document.getElementById('auth-overlay').style.display = 'none';
+            loadDocuments();
+        }
+
+        function logout() {
+            localStorage.removeItem('admin_pwd');
+            location.reload();
+        }
+
+        async function loadDocuments() {
+            try {
+                const response = await fetch('/api/admin/documents');
+                if (response.status === 401) return logout();
+                const data = await response.json();
+                renderTree(data, document.getElementById('file-tree'));
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        function renderTree(nodes, container, parentPath = '') {
+            container.innerHTML = '';
+            const ul = document.createElement('ul');
+            
+            nodes.forEach(node => {
+                const li = document.createElement('li');
+                const itemDiv = document.createElement('div');
+                itemDiv.className = 'tree-item' + (node.isHidden ? ' hidden' : '');
+                
+                if (node.type === 'file' && !node.hasTrace && node.relPath.toLowerCase().endsWith('.pdf')) {
+                    itemDiv.classList.add('no-trace');
+                }
+
+                const icon = document.createElement('span');
+                icon.className = 'icon';
+                icon.innerText = node.type === 'folder' ? '📁' : '📄';
+                
+                const name = document.createElement('span');
+                name.className = 'name';
+                name.innerText = node.name;
+
+                const inlineActions = document.createElement('div');
+                inlineActions.className = 'inline-actions';
+
+                if (node.type === 'folder') {
+                    const addFolderBtn = document.createElement('button');
+                    addFolderBtn.className = 'btn-icon';
+                    addFolderBtn.title = 'Dodaj podfolder';
+                    addFolderBtn.innerText = '📁+';
+                    addFolderBtn.onclick = () => showCreateFolder(node.relPath);
+                    inlineActions.appendChild(addFolderBtn);
+
+                    const uploadBtn = document.createElement('button');
+                    uploadBtn.className = 'btn-icon';
+                    uploadBtn.title = 'Prześlij PDF tutaj (masowo)';
+                    uploadBtn.innerText = '↑+';
+                    uploadBtn.onclick = () => showUpload(node.relPath);
+                    inlineActions.appendChild(uploadBtn);
+                } else if (node.hasTrace) {
+                    const traceLink = document.createElement('a');
+                    traceLink.href = '#';
+                    traceLink.className = 'trace-link';
+                    traceLink.innerText = '(trace)';
+                    traceLink.onclick = (e) => {
+                        e.preventDefault();
+                        showTrace(node.traceUrl);
+                    };
+                    inlineActions.appendChild(traceLink);
+                }
+
+                const actions = document.createElement('div');
+                actions.className = 'actions';
+
+                const toggleBtn = document.createElement('button');
+                toggleBtn.className = 'btn-icon';
+                toggleBtn.style.fontSize = '18px';
+                toggleBtn.innerText = node.isHidden ? '👁️‍🗨️' : '👁️';
+                toggleBtn.title = node.isHidden ? 'Pokaż dokument' : 'Ukryj dokument';
+                toggleBtn.onclick = () => toggleVisibility(node.relPath);
+                actions.appendChild(toggleBtn);
+                
+                itemDiv.appendChild(icon);
+                itemDiv.appendChild(name);
+                itemDiv.appendChild(inlineActions);
+                itemDiv.appendChild(actions);
+                li.appendChild(itemDiv);
+
+                if (node.type === 'folder' && node.children) {
+                    const subContainer = document.createElement('div');
+                    renderTree(node.children, subContainer, node.relPath);
+                    li.appendChild(subContainer);
+                }
+
+                ul.appendChild(li);
+            });
+            container.appendChild(ul);
+        }
+
+        async function showTrace(url) {
+            const viewer = document.getElementById('trace-viewer');
+            const content = document.getElementById('trace-content');
+            content.innerText = 'Ładowanie...';
+            viewer.style.display = 'flex';
+
+            try {
+                const res = await fetch(url);
+                const data = await res.json();
+                content.innerText = JSON.stringify(data, null, 2);
+            } catch (err) {
+                content.innerText = 'Błąd ładowania trace: ' + err.message;
+            }
+        }
+
+        function closeTrace() {
+            document.getElementById('trace-viewer').style.display = 'none';
+        }
+
+        async function toggleVisibility(relPath) {
+            const res = await fetch('/api/admin/toggle-visibility', {
+                method: 'POST',
+                body: JSON.stringify({ password, relPath })
+            });
+            if (res.ok) loadDocuments();
+            else alert('Błąd: ' + (await res.json()).error);
+        }
+
+        async function showCreateFolder(parentPath) {
+            const folderName = prompt(`Nowy folder w: ${parentPath || 'Główny'}\nPodaj nazwę:`);
+            if (!folderName) return;
+            const res = await fetch('/api/admin/create-folder', {
+                method: 'POST',
+                body: JSON.stringify({ password, folderName, parentPath })
+            });
+            if (res.ok) loadDocuments();
+        }
+
+        async function showUpload(parentPath) {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.pdf';
+            input.multiple = true;
+            input.onchange = async (e) => {
+                const files = e.target.files;
+                if (!files.length) return;
+                
+                const btn = document.getElementById('sync-btn');
+                btn.disabled = true;
+                btn.innerText = `⌛ Przesyłanie ${files.length} plików...`;
+
+                for (let i = 0; i < files.length; i++) {
+                    const formData = new FormData();
+                    formData.append('file', files[i]);
+                    formData.append('password', password);
+                    formData.append('parentPath', parentPath);
+
+                    try {
+                        await fetch('/api/admin/upload', {
+                            method: 'POST',
+                            body: formData
+                        });
+                    } catch (err) {
+                        console.error('Upload error:', err);
+                    }
+                }
+                
+                btn.disabled = false;
+                btn.innerText = '🔄 Synchronizuj Bazę Wiedzy';
+                loadDocuments();
+            };
+            input.click();
+        }
+
+        async function runSync() {
+            const btn = document.getElementById('sync-btn');
+            const log = document.getElementById('sync-log');
+            btn.disabled = true;
+            btn.innerText = '⌛ Synchronizacja... (może potrwać kilka minut)';
+            log.style.display = 'block';
+            log.innerText = 'Inicjalizacja...\n';
+
+            try {
+                const res = await fetch('/api/admin/sync', {
+                    method: 'POST',
+                    body: JSON.stringify({ password })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    log.innerText += data.output;
+                    btn.innerText = '✅ Synchronizacja Zakończona';
+                    setTimeout(() => {
+                        btn.disabled = false;
+                        btn.innerText = '🔄 Synchronizuj Bazę Wiedzy';
+                    }, 5000);
+                } else {
+                    log.innerText += 'BŁĄD:\n' + data.error;
+                    btn.innerText = '❌ Błąd Synchronizacji';
+                    btn.disabled = false;
+                }
+            } catch (err) {
+                log.innerText += 'Błąd połączenia: ' + err.message;
+                btn.disabled = false;
+            }
+        }
+    </script>
+</body>
+
+</html>

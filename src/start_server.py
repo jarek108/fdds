@@ -30,6 +30,7 @@ import re
 import base64
 import shutil
 import glob
+import cgi
 from typing import Dict, Any
 
 # Add project root to sys.path
@@ -157,6 +158,66 @@ def save_cost_tracking(filepath: str):
         except Exception as e:
             logger.error(f"Failed to save cost tracking: {e}")
 
+def build_doc_tree(path, root, show_hidden=False, trace_dir=None):
+    """Helper to recursively build a folder/file tree with trace checking."""
+    tree = []
+    try:
+        items = sorted(os.listdir(path), key=lambda x: (not os.path.isdir(os.path.join(path, x)), x.lower()))
+        for item in items:
+            full_path = os.path.join(path, item)
+            rel_path = os.path.relpath(full_path, root)
+            
+            is_hidden = item.endswith('.hidden') or '.hidden' in rel_path
+            if is_hidden and not show_hidden:
+                continue
+                
+            display_name = item.replace('.hidden', '')
+            safe_rel_path = rel_path.replace('\\', '/')
+            
+            if os.path.isdir(full_path):
+                tree.append({
+                    "name": display_name,
+                    "type": "folder",
+                    "isHidden": is_hidden,
+                    "relPath": safe_rel_path,
+                    "children": build_doc_tree(full_path, root, show_hidden, trace_dir)
+                })
+            else:
+                if item.lower().endswith('.txt'): continue # Skip meta files
+                
+                # Trace detection
+                has_trace = False
+                trace_url = None
+                if trace_dir and item.lower().endswith('.pdf'):
+                    # Traces usually have the same name as pdf but .json extension
+                    # pdf_rel_no_ext should be e.g. "Materiały edu/Analiza... (2)"
+                    # We remove the .pdf extension and any .hidden suffix
+                    clean_rel_path = rel_path.replace('.hidden', '')
+                    pdf_rel_no_ext = clean_rel_path.rsplit('.', 1)[0]
+                    trace_rel_path = pdf_rel_no_ext + ".json"
+                    
+                    # Normalize for OS comparison
+                    trace_full_path = os.path.normpath(os.path.join(trace_dir, trace_rel_path))
+                    
+                    if os.path.exists(trace_full_path):
+                        has_trace = True
+                        # URL for frontend must use forward slashes
+                        safe_trace_rel = trace_rel_path.replace('\\', '/')
+                        trace_url = f"/api/admin/trace-content?relPath={urllib.parse.quote(safe_trace_rel)}"
+
+                tree.append({
+                    "name": display_name,
+                    "type": "file",
+                    "isHidden": is_hidden,
+                    "relPath": safe_rel_path,
+                    "hasTrace": has_trace,
+                    "traceUrl": trace_url,
+                    "url": f"/documents/{urllib.parse.quote(safe_rel_path)}"
+                })
+    except Exception as e:
+        logger.error(f"Error building tree for {path}: {e}")
+    return tree
+
 class ThreadedHTTPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     """Server extension allowing request handling in separate threads."""
     allow_reuse_address = True
@@ -202,6 +263,85 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
             self.send_header('Content-type', 'application/json')
             self.end_headers()
             self.wfile.write(json.dumps(safe_config).encode('utf-8'))
+            return
+
+        if self.path == '/api/documents':
+            config = get_config()
+            documents_root = os.path.abspath(config['paths']['documents_dir'])
+            doc_tree = build_doc_tree(documents_root, documents_root, show_hidden=False)
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps(doc_tree).encode('utf-8'))
+            return
+
+        if self.path == '/admin':
+            html_path = os.path.join(os.path.dirname(__file__), '../public/admin.html')
+            if os.path.exists(html_path):
+                self.send_response(200)
+                self.send_header('Content-type', 'text/html; charset=utf-8')
+                self.end_headers()
+                with open(html_path, 'rb') as f:
+                    self.wfile.write(f.read())
+            else:
+                self.send_error(404, "Admin HTML not found")
+            return
+
+        if self.path == '/api/admin/documents':
+            config = get_config()
+            documents_root = os.path.abspath(config['paths']['documents_dir'])
+            
+            # Find current trace dir from master KB
+            kb_path = os.path.join(os.path.dirname(__file__), '../data/master_knowledge_base.md')
+            trace_dir = None
+            if os.path.exists(kb_path):
+                with open(kb_path, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        if line.startswith("**Katalog źródłowy:**"):
+                            trace_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', line.split("**Katalog źródłowy:**")[1].strip()))
+                            break
+
+            doc_tree = build_doc_tree(documents_root, documents_root, show_hidden=True, trace_dir=trace_dir)
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps(doc_tree).encode('utf-8'))
+            return
+
+        if self.path.startswith('/api/admin/trace-content'):
+            query_params = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            rel_path = query_params.get('relPath', [None])[0]
+            
+            if not rel_path:
+                self.send_error(400, "Missing relPath")
+                return
+
+            kb_path = os.path.join(os.path.dirname(__file__), '../data/master_knowledge_base.md')
+            trace_dir = None
+            if os.path.exists(kb_path):
+                with open(kb_path, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        if line.startswith("**Katalog źródłowy:**"):
+                            trace_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', line.split("**Katalog źródłowy:**")[1].strip()))
+                            break
+            
+            if not trace_dir:
+                self.send_error(404, "Trace directory not found in KB")
+                return
+
+            file_path = os.path.abspath(os.path.join(trace_dir, rel_path.replace('/', os.sep)))
+            if not file_path.startswith(trace_dir):
+                self.send_error(403, "Access denied")
+                return
+
+            if os.path.exists(file_path):
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json; charset=utf-8')
+                self.end_headers()
+                with open(file_path, 'rb') as f:
+                    self.wfile.write(f.read())
+            else:
+                self.send_error(404, "Trace file not found")
             return
 
         # Securely serve user audio files (only if the filename contains the current session's chatId)
@@ -264,6 +404,215 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
         self.wfile.write(json.dumps({"error": message}).encode())
 
     def do_POST(self):
+        # Admin authentication helper
+        def check_admin_auth(request_json):
+            config = get_config()
+            expected_password = config.get('correction_password')
+            provided_password = request_json.get('password')
+            return not expected_password or provided_password == expected_password
+
+        if self.path == '/api/admin/toggle-visibility':
+            try:
+                content_length = int(self.headers['Content-Length'])
+                post_data = self.rfile.read(content_length)
+                request_json = json.loads(post_data)
+
+                if not check_admin_auth(request_json):
+                    self.send_json_error(401, "Nieprawidłowe hasło.")
+                    return
+
+                rel_path = request_json.get('relPath')
+                config = get_config()
+                documents_root = os.path.abspath(config['paths']['documents_dir'])
+                traces_root = os.path.abspath(config['paths']['traces_dir'])
+                
+                # Full path of the file/folder
+                # Replace forward slashes back to OS specific separator
+                target_path = os.path.abspath(os.path.join(documents_root, rel_path.replace('/', os.sep)))
+                
+                if not target_path.startswith(documents_root):
+                    self.send_json_error(403, "Invalid path")
+                    return
+
+                # Toggle logic
+                if target_path.endswith('.hidden'):
+                    new_path = target_path[:-7]
+                else:
+                    new_path = target_path + '.hidden'
+
+                if os.path.exists(target_path):
+                    os.rename(target_path, new_path)
+                    
+                    # Also try to rename the corresponding trace file if it exists
+                    # We need to find the correct job folder in traces
+                    kb_path = os.path.join(os.path.dirname(__file__), '../data/master_knowledge_base.md')
+                    if os.path.exists(kb_path):
+                        with open(kb_path, 'r', encoding='utf-8') as f:
+                            first_lines = [f.readline() for _ in range(5)]
+                            source_dir_line = next((l for l in first_lines if l.startswith("**Katalog źródłowy:**")), None)
+                            if source_dir_line:
+                                trace_job_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', source_dir_line.split("**Katalog źródłowy:**")[1].strip()))
+                                
+                                # Trace file matches the rel_path but with .json
+                                trace_rel_path = rel_path.rsplit('.', 1)[0] + ".json"
+                                if rel_path.endswith('.hidden'):
+                                    # If original was hidden, it might have been named something like name.pdf.hidden
+                                    # The relPath would be 'folder/name.pdf.hidden'
+                                    # We want to find folder/name.pdf.json.hidden and rename to folder/name.pdf.json
+                                    # Actually, let's keep it simple: just rename in documents_root.
+                                    # The sync process will handle the rest.
+                                    pass
+                                
+                                # For now, we only rename in documents. Sync will pick up changes.
+                    
+                    self.send_response(200)
+                    self.send_header('Content-type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"success": True, "newPath": os.path.relpath(new_path, documents_root)}).encode())
+                else:
+                    self.send_json_error(404, "File not found")
+            except Exception as e:
+                logger.error(f"Error toggling visibility: {e}")
+                self.send_json_error(500, str(e))
+            return
+
+        if self.path == '/api/admin/create-folder':
+            try:
+                content_length = int(self.headers['Content-Length'])
+                post_data = self.rfile.read(content_length)
+                request_json = json.loads(post_data)
+
+                if not check_admin_auth(request_json):
+                    self.send_json_error(401, "Nieprawidłowe hasło.")
+                    return
+
+                parent_rel_path = request_json.get('parentPath', '')
+                folder_name = request_json.get('folderName')
+                
+                if not folder_name:
+                    self.send_json_error(400, "Missing folder name")
+                    return
+
+                config = get_config()
+                documents_root = os.path.abspath(config['paths']['documents_dir'])
+                target_dir = os.path.abspath(os.path.join(documents_root, parent_rel_path.replace('/', os.sep), folder_name))
+                
+                if not target_dir.startswith(documents_root):
+                    self.send_json_error(403, "Invalid path")
+                    return
+
+                os.makedirs(target_dir, exist_ok=True)
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": True}).encode())
+            except Exception as e:
+                logger.error(f"Error creating folder: {e}")
+                self.send_json_error(500, str(e))
+            return
+
+        if self.path == '/api/admin/upload':
+            try:
+                # Handle multipart/form-data
+                form = cgi.FieldStorage(
+                    fp=self.rfile,
+                    headers=self.headers,
+                    environ={'REQUEST_METHOD': 'POST'}
+                )
+                
+                password = form.getfirst("password")
+                if not check_admin_auth({"password": password}):
+                    self.send_json_error(401, "Nieprawidłowe hasło.")
+                    return
+
+                parent_rel_path = form.getfirst("parentPath", "")
+                file_item = form['file']
+                
+                if not file_item.filename:
+                    self.send_json_error(400, "No file uploaded")
+                    return
+
+                config = get_config()
+                documents_root = os.path.abspath(config['paths']['documents_dir'])
+                target_path = os.path.abspath(os.path.join(documents_root, parent_rel_path.replace('/', os.sep), file_item.filename))
+
+                if not target_path.startswith(documents_root):
+                    self.send_json_error(403, "Invalid path")
+                    return
+
+                with open(target_path, 'wb') as f:
+                    f.write(file_item.file.read())
+
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": True}).encode())
+            except Exception as e:
+                logger.error(f"Error uploading file: {e}")
+                self.send_json_error(500, str(e))
+            return
+
+        if self.path == '/api/admin/sync':
+            try:
+                content_length = int(self.headers['Content-Length'])
+                post_data = self.rfile.read(content_length)
+                request_json = json.loads(post_data)
+
+                if not check_admin_auth(request_json):
+                    self.send_json_error(401, "Nieprawidłowe hasło.")
+                    return
+
+                # Parse master KB to find original trace folder and max_tokens
+                kb_path = os.path.join(os.path.dirname(__file__), '../data/master_knowledge_base.md')
+                source_dir = "data/traces/200_gemini-3-flash-preview" # Fallback
+                max_tokens = 200
+                if os.path.exists(kb_path):
+                    with open(kb_path, 'r', encoding='utf-8') as f:
+                        for line in f:
+                            if line.startswith("**Katalog źródłowy:**"):
+                                source_dir = line.split("**Katalog źródłowy:**")[1].strip()
+                                # Try to extract tokens from folder name e.g. "data/traces/500_model"
+                                folder_name = os.path.basename(source_dir)
+                                if '_' in folder_name:
+                                    try:
+                                        max_tokens = int(folder_name.split('_')[0])
+                                    except: pass
+                                break
+                
+                import subprocess
+                # 1. Run trace creation
+                trace_script = os.path.join(os.path.dirname(__file__), './create_document_traces.py')
+                logger.info(f"Starting sync: Tracing documents with max_tokens={max_tokens}...")
+                
+                # We'll run with default workers (5) and no force regeneration
+                res1 = subprocess.run([sys.executable, trace_script, "--max-tokens", str(max_tokens)], capture_output=True, text=True)
+                if res1.returncode != 0:
+                    logger.error(f"Trace creation failed: {res1.stderr}")
+                    self.send_json_error(500, f"Błąd podczas tworzenia śladów: {res1.stderr}")
+                    return
+
+                # 2. Run master session creation
+                master_script = os.path.join(os.path.dirname(__file__), './create_master_session.py')
+                logger.info(f"Starting sync: Building master session from {source_dir}...")
+                res2 = subprocess.run([sys.executable, master_script, source_dir], capture_output=True, text=True)
+                
+                if res2.returncode != 0:
+                    logger.error(f"Master session creation failed: {res2.stderr}")
+                    self.send_json_error(500, f"Błąd podczas generowania sesji: {res2.stderr}")
+                    return
+
+                # 3. Reload doc index for the server
+                load_doc_index()
+                
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": True, "output": res1.stdout + "\n" + res2.stdout}).encode())
+            except Exception as e:
+                logger.error(f"Error during sync: {e}")
+                self.send_json_error(500, str(e))
+            return
+
         if self.path == '/api/correction':
             try:
                 content_length = int(self.headers['Content-Length'])
