@@ -384,7 +384,14 @@
                 const stats = await res.json();
                 document.getElementById('stat-docs').innerText = `${stats.docs_with_traces} / ${stats.total_docs}`;
                 document.getElementById('stat-tokens').innerText = stats.kb_tokens.toLocaleString();
-                document.getElementById('stat-sync').innerText = stats.last_sync;
+                
+                const syncStatEl = document.getElementById('stat-sync');
+                if (stats.is_up_to_date) {
+                    syncStatEl.innerHTML = `<span style="color: var(--success-color);">✅ Aktualna</span> <span style="font-size: 0.8em; color: var(--text-light);">(${stats.last_sync})</span>`;
+                } else {
+                    syncStatEl.innerHTML = `<span style="color: var(--error-color); font-weight: bold;">❌ Wymagana (Zmieniono pliki)</span> <span style="font-size: 0.8em; color: var(--text-light);">(${stats.last_sync})</span>`;
+                }
+                
                 document.getElementById('stat-config').innerText = `${stats.trace_length} tok / ${stats.current_model}`;
                 
                 if (stats.docs_with_traces < stats.total_docs) {

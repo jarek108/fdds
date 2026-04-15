@@ -301,18 +301,28 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
             
             total_docs = 0
             docs_with_traces = 0
+            current_fingerprint = []
             
             for root, _, files in os.walk(documents_root):
                 if '.hidden' in root: continue
                 for file in files:
                     if file.lower().endswith('.pdf') and not file.endswith('.hidden'):
                         total_docs += 1
-                        hash_file = os.path.join(root, file + ".hash")
+                        pdf_path = os.path.join(root, file)
+                        rel_pdf_path = os.path.relpath(pdf_path, documents_root)
+                        hash_file = pdf_path + ".hash"
                         if os.path.exists(hash_file):
-                            with open(hash_file, 'r') as f:
+                            with open(hash_file, 'r', encoding='utf-8') as f:
                                 file_hash = f.read().strip()
+                                current_fingerprint.append(f"{rel_pdf_path.replace(os.sep, '/')}:{file_hash}")
                                 if os.path.exists(os.path.join(trace_dir, f"{file_hash}.json")):
                                     docs_with_traces += 1
+                        else:
+                            current_fingerprint.append(f"{rel_pdf_path.replace(os.sep, '/')}:missing")
+            
+            current_fingerprint.sort()
+            import hashlib
+            current_fingerprint_hash = hashlib.sha256(json.dumps(current_fingerprint).encode('utf-8')).hexdigest()
             
             # Load KB stats
             kb_stats = {}
@@ -335,11 +345,15 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
                 except Exception as e:
                     logger.error(f"Error reading kb_stats.json: {e}")
 
+            stored_fingerprint = kb_stats.get("fingerprint_hash", "")
+            is_up_to_date = (current_fingerprint_hash == stored_fingerprint) if stored_fingerprint else False
+
             stats = {
                 "total_docs": total_docs,
                 "docs_with_traces": docs_with_traces,
                 "kb_tokens": kb_stats.get("token_count", 0),
                 "last_sync": kb_stats.get("timestamp", "Wymagana synchronizacja"),
+                "is_up_to_date": is_up_to_date,
                 "current_model": config["doc_tracing_model"],
                 "trace_length": config["trace_length"]
             }

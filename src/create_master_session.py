@@ -6,6 +6,7 @@ import sys
 import urllib.parse
 import shutil
 import time
+import hashlib
 from typing import List, Dict, Any
 
 # Add project root to sys.path
@@ -157,13 +158,18 @@ def create_master_session(trace_dir: str = None):
     # Copy from CLI workspace to our data folder
     shutil.copy2(session.session_path, master_session_path)
     
+    # Calculate fingerprint for state checking
+    fingerprint = sorted([f"{doc['current_rel_path'].replace(os.sep, '/')}:{doc.get('source_hash', '')}" for doc in all_docs])
+    fingerprint_hash = hashlib.sha256(json.dumps(fingerprint).encode('utf-8')).hexdigest()
+
     # Save stats for admin panel
     kb_stats = {
         "token_count": session.stats.get("inputTokens", 0) + session.stats.get("cachedTokens", 0),
         "doc_count": len(all_docs),
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
         "model": config["answer_model"],
-        "trace_dir": os.path.relpath(trace_dir, os.path.join(os.path.dirname(__file__), '../'))
+        "trace_dir": os.path.relpath(trace_dir, os.path.join(os.path.dirname(__file__), '../')),
+        "fingerprint_hash": fingerprint_hash
     }
     stats_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../data/kb_stats.json'))
     with open(stats_path, 'w', encoding='utf-8') as f:
