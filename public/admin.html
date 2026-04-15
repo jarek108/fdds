@@ -447,6 +447,14 @@
                     inlineActions.appendChild(traceLink);
                 }
 
+                // Remove button for all items (files and folders)
+                const removeBtn = document.createElement('button');
+                removeBtn.className = 'btn-icon';
+                removeBtn.title = 'Usuń trwale';
+                removeBtn.innerText = '🗑️';
+                removeBtn.onclick = () => removeItem(node.relPath);
+                inlineActions.appendChild(removeBtn);
+
                 const actions = document.createElement('div');
                 actions.className = 'actions';
 
@@ -501,6 +509,21 @@
             });
             if (res.ok) loadDocuments();
             else alert('Błąd: ' + (await res.json()).error);
+        }
+
+        async function removeItem(relPath) {
+            if (!confirm(`CZY NA PEWNO chcesz trwale usunąć: ${relPath}?\nOperacja jest nieodwracalna.`)) return;
+            
+            const res = await fetch('/api/admin/remove', {
+                method: 'POST',
+                body: JSON.stringify({ password, relPath })
+            });
+            
+            if (res.ok) {
+                loadDocuments();
+            } else {
+                alert('Błąd usuwania: ' + (await res.json()).error);
+            }
         }
 
         async function showCreateFolder(parentPath) {

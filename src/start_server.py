@@ -101,11 +101,12 @@ def translate_doc_links(text: str) -> str:
             return f"[{doc_info['tytul']}]({doc_info['url']})"
         return m.group(0)
 
-    # 1. Handle bracketed [doc_1] -> [Title](URL)
-    text = re.sub(r'\[(doc_\d+)\]', replacer, text)
+    # 1. Remove brackets around purely doc ID lists: [doc_1, doc_2] -> doc_1, doc_2
+    # This prevents leftover outer brackets when multiple docs are cited together.
+    text = re.sub(r'\[(?:\s*doc_\d+\s*,?\s*)+\]', lambda m: m.group(0)[1:-1], text)
     
-    # 2. Handle raw doc_1 -> [Title](URL) 
-    # Use negative lookbehind to ensure we don't match doc_1 inside a link we just created or existing ones
+    # 2. Handle all raw doc_N -> [Title](URL) 
+    # Use negative lookbehind to ensure we don't match doc_N inside a link we just created
     # (i.e. not preceded by ]( )
     text = re.sub(r'(?<!\]\()\b(doc_\d+)\b', replacer, text)
 
@@ -473,6 +474,46 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
             provided_password = request_json.get('password')
             return not expected_password or provided_password == expected_password
 
+        if self.path == '/api/admin/remove':
+            try:
+                content_length = int(self.headers['Content-Length'])
+                post_data = self.rfile.read(content_length)
+                request_json = json.loads(post_data)
+
+                if not check_admin_auth(request_json):
+                    self.send_json_error(401, "Nieprawidłowe hasło.")
+                    return
+
+                rel_path = request_json.get('relPath')
+                config = get_config()
+                documents_root = os.path.abspath(config['paths']['documents_dir'])
+                
+                target_path = os.path.abspath(os.path.join(documents_root, rel_path.replace('/', os.sep)))
+                
+                if not target_path.startswith(documents_root):
+                    self.send_json_error(403, "Invalid path")
+                    return
+
+                if os.path.exists(target_path):
+                    if os.path.isdir(target_path):
+                        shutil.rmtree(target_path)
+                    else:
+                        os.remove(target_path)
+                        hash_file = target_path + ".hash"
+                        if os.path.exists(hash_file):
+                            os.remove(hash_file)
+                    
+                    self.send_response(200)
+                    self.send_header('Content-type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"success": True}).encode())
+                else:
+                    self.send_json_error(404, "File not found")
+            except Exception as e:
+                logger.error(f"Error removing item: {e}")
+                self.send_json_error(500, str(e))
+            return
+
         if self.path == '/api/admin/toggle-visibility':
             try:
                 content_length = int(self.headers['Content-Length'])
@@ -603,7 +644,14 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
                     return
 
                 with open(target_path, 'wb') as f:
-                    f.write(file_item.file.read())
+                    file_content = file_item.file.read()
+                    f.write(file_content)
+
+                # Generate .hash file immediately after upload
+                import hashlib
+                file_hash = hashlib.sha256(file_content).hexdigest()
+                with open(target_path + ".hash", 'w', encoding='utf-8') as f:
+                    f.write(file_hash)
 
                 self.send_response(200)
                 self.send_header('Content-type', 'application/json')
@@ -890,11 +938,13 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
                 # Run model
                 start_time = time.time()
                 try:
+                    logger.info(f"Sending request to Gemini CLI. Prompt: {user_query[:200]}... Files: {gemini_files}")
                     session = run_gemini_cli_headless(
                         prompt=user_query,
                         model_id=model,
                         files=gemini_files,
-                        session_to_resume=user_session_file
+                        session_to_resume=user_session_file,
+                        stream_output=True
                     )
                 # Copy updated session back to project
                     shutil.copy2(session.session_path, user_session_file)
@@ -909,7 +959,8 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
                     return
                     
                 duration = time.time() - start_time
-                logger.info(f"Received answer for {chat_id} (Time: {duration:.1f}s)")
+                answer_preview = session.text[:200].replace('\n', ' ') if session.text else ''
+                logger.info(f"Received answer for {chat_id} (Time: {duration:.1f}s, Preview: {answer_preview}...)")
                 
                 # Stats
                 flattened_stats = {
