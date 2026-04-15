@@ -1,312 +1,171 @@
-"""
-Extracts knowledge from raw PDFs into lightweight JSON traces using parallel processing.
-
-Prerequisite: 
-Requires raw PDF documents to be present in the `data/documents/` directory (or a custom directory).
-
-This script utilizes the `gemini_cli_headless.py` wrapper to interact with the Gemini CLI 
-to read PDF files and generate structured JSON summaries ("traces") that capture the essence
-of each document. These traces are later used to build the master knowledge base.
-
-Usage Examples:
-    # Process all PDFs using default settings (5 workers, ~200 tokens per summary)
-    python src/create_document_traces.py
-
-    # Process a maximum of 10 documents, targeting a 500-token summary length
-    python src/create_document_traces.py --max-docs 10 --max-tokens 500
-
-    # Force regeneration of traces even if they already exist, using 10 parallel workers
-    python src/create_document_traces.py --force-regeneration --workers 10
-
-    # Process a specific directory with a cost limit
-    python src/create_document_traces.py --dir custom/pdf/path --max-cost 2.50
-
-Arguments:
-    --dir                 Optional: Custom directory containing PDFs to process. Defaults to `data/documents/`.
-    --max-docs            Optional: Limit the maximum number of documents to process. Useful for testing.
-    --max-cost            Optional: Stop processing if the estimated API cost exceeds this dollar amount.
-    --max-tokens          Target length for the "Zawartość" section of the summary (default: 200).
-    --force-regeneration  If set, overwrites existing JSON trace files instead of skipping them.
-    --workers             Number of parallel threads to use for API requests (default: 5).
-"""
-
 import os
-import glob
-import time
 import json
+import logging
 import argparse
 import sys
-import logging
-import threading
-import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Optional, Dict, Any, List
+from typing import List, Dict, Any
 
+# Add project root to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
 from gemini_cli_headless import run_gemini_cli_headless
 from src.utils.config import get_config, setup_logging
+from src.utils.hashes import get_or_create_hash_file
 from src.utils.calc_stats import calculate_cost
 
-# Load environment variables
-from dotenv import load_dotenv
-load_dotenv(os.path.join(os.path.dirname(__file__), '../config/.env'))
+logger = logging.getLogger("doc_tracing")
 
-logger = logging.getLogger("create_document_traces")
+def process_single_document(pdf_path: str, trace_dir: str, model_id: str, max_tokens: int, force_regeneration: bool) -> Dict[str, Any]:
+    """Extracts summary/trace from a single PDF and saves it as <hash>.json."""
+    try:
+        # 1. Get/Calculate Hash
+        file_hash = get_or_create_hash_file(pdf_path)
+        if not file_hash:
+            return {"source": pdf_path, "status": "error", "message": "Could not calculate hash"}
 
-# Shared state for parallel execution
-print_lock = threading.Lock()
-stats_lock = threading.Lock()
-stop_flag = threading.Event()
+        trace_path = os.path.join(trace_dir, f"{file_hash}.json")
+        
+        # 2. Check if trace already exists
+        if os.path.exists(trace_path) and not force_regeneration:
+            return {"source": pdf_path, "status": "skipped", "hash": file_hash}
 
-totals = {
-    "cost": 0.0,
-    "input": 0,
-    "output": 0,
-    "cached": 0,
-    "docs_processed": 0,
-    "skipped_docs": 0
-}
+        # Clear signal for logging
+        print(f"ANALYZING: {os.path.basename(pdf_path)}...", flush=True)
+        
+        prompt = f"""
+Przeanalizuj dołączony dokument PDF i przygotuj jego 'ślad' (trace) dla bazy wiedzy.
+Twoim celem jest wyciągnięcie esencji wiedzy w formie skondensowanej, ale bardzo konkretnej.
 
-# Preserve the user's customized prompt
-BASE_PROMPT = """Jesteś ekspertem ds. analizy dokumentów i edukacji w Fundacji Dajemy Dzieciom Siłę (FDDS). Twoim zadaniem jest przeczytanie załączonego dokumentu i przygotowanie dla niego skondensowanej "metryczki wiedzy" (trace file). 
+WYMAGANIA:
+1. JĘZYK: Odpowiadaj wyłącznie w języku polskim.
+2. TYTUŁ: Podaj dokładny, oficjalny tytuł dokumentu. Bądź zwięzły, nie dodawaj żadnych komentarzy przed ani po tytule.
+3. TREŚĆ: Skup się na faktach, liczbach, wytycznych, procedurach i kluczowych przesłaniach. Jeśli dokument wspomina o innych programach FDDS, numerach telefonów (116 111, 800 100 100) lub stronach www, koniecznie je uwzględnij. Unikaj nadmiarowego formatowania Markdown (używaj tylko podstawowych list lub akapitów).
+4. LIMIT: Twoja odpowiedź powinna mieć około {max_tokens} tokenów (bądź zwięzły, ale merytoryczny).
 
-Ta metryczka zostanie wczytana do pamięci szybkiego asystenta AI, który będzie na jej podstawie odpowiadał na pytania użytkowników. Musi być zwięzła, nasycona faktami i napisana w sposób naturalny, gotowy do zaprezentowania człowiekowi.
+STRUKTURA ODPOWIEDZI (ŚCISŁY FORMAT):
+Tytuł: [Tutaj wpisz tylko tytuł]
+Treść: [Tutaj wpisz treść merytoryczną]
 
-Przeanalizuj cały dokument i wygeneruj odpowiedź składającą się tylko z poniższych sekcji. Nie dodawaj żadnych wstępów, powitań, ani znaczników formatowania Markdown takich jak nagłówki (np. ###). Po prostu rozpocznij każdą sekcję (Tytuł, Zawartość) od jej nazwy.
-
-
-Tytuł: Krótka, human-friendly nazwa dokumentu (ale niekoniecznie pliku!)
-
-Zawartość (około {max_tokens} tokenów):
-
-We wstępie opisz krótko cel, Odbiorców (np. rodzice małych dzieci, nastolatkowie, nauczyciele, profesjonaliści).
-
-Teraz wydobądź najważniejszą wiedzę z dokumentu. Skup się na konkretach: zasady, wytyczne, kroki postępowania, statystyki, zjawiska lub definicje. Pomiń "lanie wody", wstępy historyczne czy informacje redakcyjne. Wyobraź sobie, że notujesz "mięso" dla kogoś, kto ma tylko minutę na przygotowanie się do wykładu z tego tematu. Zachowaj profesjonalny, wspierający ton charakterystyczny dla FDDS.
-
-Na koniec dodaj powiązania z innymi tematami, programami lub dokumentami FDDS. Zrób to tylko jeśli jest coś faktycznie istotnego w tym konkretnym przypadku.
-
-Pamiętaj nie przekraczać {max_tokens} tokenów dla całości.
+ZAKAZ: Nie pisz "Oto analiza...", "Zgodnie z wytycznymi...", "Dokument dotyczy...". Zacznij od razu od "Tytuł:".
 """
-
-def parse_model_response(text: str) -> Dict[str, str]:
-    """Parses the raw AI response into structured sections."""
-    sections = {"tytul": "", "zawartosc": ""}
-    
-    # Clean up AI prologue
-    search_anchor = "Tytuł" if "Tytuł" in text else "Zawartość"
-    if search_anchor in text:
-        text = text[text.find(search_anchor):]
-    
-    current_section = None
-    buffer = []
-    
-    for line in text.split('\n'):
-        lower_line = line.lower().strip()
-        if lower_line.startswith("tytuł") or lower_line.startswith("tytul"):
-            current_section = "tytul"
-            buffer = [line.split(':', 1)[1].strip() if ':' in line else ""]
-        elif lower_line.startswith("zawartość") or lower_line.startswith("zawartosc"):
-            if current_section: sections[current_section] = "\n".join(buffer).strip()
-            current_section = "zawartosc"
-            buffer = [line.split(':', 1)[1].strip() if ':' in line else ""]
-        else:
-            if current_section:
-                buffer.append(line)
-                
-    if current_section:
-        sections[current_section] = "\n".join(buffer).strip()
         
-    return sections
-
-def process_single_pdf(pdf_path: str, documents_dir: str, job_dir: str, session_folder: str, model: str, 
-                       max_tokens: int, force_regeneration: bool):
-    """Worker function to process one PDF."""
-    global totals
-    
-    if stop_flag.is_set():
-        return
-
-    rel_pdf_path = os.path.relpath(pdf_path, documents_dir).replace('\\', '/')
-    trace_rel_path = rel_pdf_path.rsplit('.', 1)[0] + ".json"
-    trace_path = os.path.join(job_dir, trace_rel_path)
-    
-    # Check if file exists to skip processing
-    if os.path.exists(trace_path) and not force_regeneration:
-        # (Skipped logic is handled in the main loop caller for count accuracy)
-        return
-
-    start_time = time.time()
-    formatted_prompt = BASE_PROMPT.format(max_tokens=max_tokens)
-    instruction_text = f"{formatted_prompt.strip()}\nANALIZUJ DOKUMENT:"
-
-    try:
         session = run_gemini_cli_headless(
-            prompt=instruction_text,
-            model_id=model,
-            files=[pdf_path],
-            api_key=os.environ.get("GEMINI_API_KEY")
+            prompt=prompt,
+            model_id=model_id,
+            files=[pdf_path]
         )
-        answer = session.text
-        session_id = session.session_id
-        stats = session.stats
-    except Exception as e:
-        duration = time.time() - start_time
-        time_str = f"{int(duration // 60):02d}:{int(duration % 60):02d}"
-        with print_lock:
-            print(f"{'ERR':<3} | {time_str:<8} | {'-':<10} | {'-':<10} | {'-':<8} | {'-':<5} | {'-':<8} | {'-':<8} | {'ERROR':<6} | {rel_pdf_path}")
-            logger.error(f"Error in {rel_pdf_path}: {e}")
-        return
-    
-    duration = time.time() - start_time
-    time_str = f"{int(duration // 60):02d}:{int(duration % 60):02d}"
-    
-    in_tk = stats.get("inputTokens", 0)
-    out_tk = stats.get("outputTokens", 0)
-    cached_tk = stats.get("cachedTokens", 0)
-    thought_tk = stats.get("thoughtTokens", 0)
-    
-    cost = calculate_cost(model, in_tk, out_tk + thought_tk, cached_tk)
-    structured_data = parse_model_response(answer)
-    
-    # Validate that we actually extracted something meaningful
-    if not structured_data.get("zawartosc"):
-        with print_lock:
-            print(f"{'ERR':<3} | {time_str:<8} | {session_id[:8]:<10} | {thought_tk:<10} | {in_tk:<8} | {out_tk:<5} | {cached_tk:<8} | ${cost:.4f} | {'ERROR':<6} | {rel_pdf_path}")
-            logger.error(f"Model returned invalid or empty format for {rel_pdf_path}. Raw answer: {repr(answer)}")
-        return
-
-    structured_data.update({
-        "source": rel_pdf_path,
-        "session_id": session_id,
-        "model": model,
-        "tokens": {"in": in_tk, "out": out_tk, "cached": cached_tk, "thoughts": thought_tk},
-        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
-    })
         
-    os.makedirs(os.path.dirname(trace_path), exist_ok=True)
-    with open(trace_path, 'w', encoding='utf-8') as f:
-        json.dump(structured_data, f, indent=2, ensure_ascii=False)
+        text = session.text.strip()
+        title = "Brak tytułu"
+        content = text
         
-    with stats_lock:
-        totals["docs_processed"] += 1
-        totals["cost"] += cost
-        totals["input"] += in_tk
-        totals["output"] += out_tk + thought_tk
-        totals["cached"] += cached_tk
-        current_idx = totals["docs_processed"]
-        
-    with print_lock:
-        print(f"{current_idx:<3} | {time_str:<8} | {session_id[:8]:<10} | {thought_tk:<10} | {in_tk:<8} | {out_tk:<5} | {cached_tk:<8} | ${cost:.4f} | {'OK':<6} | {rel_pdf_path}")
+        if "Tytuł:" in text and "Treść:" in text:
+            parts = text.split("Treść:", 1)
+            title = parts[0].replace("Tytuł:", "").strip()
+            content = parts[1].strip()
+        elif "Tytuł:" in text: # Fallback if Treść is missing
+            title = text.replace("Tytuł:", "").strip()
 
-def create_document_traces(target_dir: Optional[str] = None, max_docs: Optional[int] = None, 
-               max_cost: Optional[float] = None, max_tokens: int = 200, 
-               force_regeneration: bool = False, workers: int = 5) -> None:
-    """Processes PDF documents in parallel and generates structured trace files (JSON)."""
-    config = get_config()
-    paths = config['paths']
-    
-    documents_dir = target_dir or paths['documents_dir']
-    traces_root = paths['traces_dir']
-    if "doc_tracing_model" not in config:
-        raise KeyError("Missing required 'doc_tracing_model' in config/config.json")
-    model = config["doc_tracing_model"]
-    
-    # Create job-specific directory
-    job_dir_name = f"{max_tokens}_{model.replace('.', '_')}"
-    job_dir = os.path.join(traces_root, job_dir_name)
-    os.makedirs(job_dir, exist_ok=True)
+        # Calculate cost
+        s = session.stats
+        cost = calculate_cost(
+            model_id, 
+            s.get("inputTokens", 0), 
+            s.get("outputTokens", 0) + s.get("thoughtTokens", 0), 
+            s.get("cachedTokens", 0)
+        )
 
-    # Generate a unique folder for this specific run's sessions
-    run_timestamp = time.strftime("%Y-%m-%d_%H-%M-%S")
-    session_folder = f"{run_timestamp}_trace_creation"
+        trace_data = {
+            "source_hash": file_hash,
+            "original_filename": os.path.basename(pdf_path),
+            "tytul": title,
+            "zawartosc": content,
+            "stats": s,
+            "cost": cost,
+            "model": model_id,
+            "timestamp": session.raw_data.get("timestamp")
+        }
 
-    pdf_files = glob.glob(os.path.join(documents_dir, "**/*.pdf"), recursive=True)
-    if not pdf_files:
-        logger.warning(f"No PDFs found in {documents_dir}")
-        return
-
-    print(f"Starting Knowledge Extraction for {len(pdf_files)} documents using {model}...")
-    print(f"  Parallel workers: {workers}")
-    print(f"  Target summary length: ~{max_tokens} tokens per document")
-    print(f"  Output directory: {job_dir}")
-    if max_docs: print(f"  Limit: Max Documents = {max_docs}")
-    if max_cost: print(f"  Limit: Max Cost = ${max_cost:.2f}")
-    print("-" * 120)
-    
-    header = f"{'#':<3} | {'Time':<8} | {'Session':<10} | {'Thought Tk':<10} | {'In':<8} | {'Out':<5} | {'Cached':<8} | {'Cost':<8} | {'Status':<6} | {'Document'}"
-    print(header)
-    print("-" * len(header))
-
-    # Use ThreadPoolExecutor for parallel processing
-    executor = ThreadPoolExecutor(max_workers=workers)
-    futures = []
-    
-    try:
-        # Submit tasks while respecting the max_docs limit
-        submitted_count = 0
-        for pdf_path in pdf_files:
-            if stop_flag.is_set():
-                break
-            if max_docs and submitted_count >= max_docs:
-                break
+        with open(trace_path, 'w', encoding='utf-8') as f:
+            json.dump(trace_data, f, indent=2, ensure_ascii=False)
             
-            rel_pdf_path = os.path.relpath(pdf_path, documents_dir).replace('\\', '/')
-            trace_rel_path = rel_pdf_path.rsplit('.', 1)[0] + ".json"
-            trace_path = os.path.join(job_dir, trace_rel_path)
+        return {"source": pdf_path, "status": "success", "cost": cost, "hash": file_hash}
+    except Exception as e:
+        logger.error(f"Error processing {pdf_path}: {e}")
+        return {"source": pdf_path, "status": "error", "message": str(e)}
 
-            # Pre-check skip to keep counting accurate
-            if os.path.exists(trace_path) and not force_regeneration:
-                with stats_lock:
-                    totals["skipped_docs"] += 1
-                    totals["docs_processed"] += 1
-                    current_idx = totals["docs_processed"]
-                with print_lock:
-                    print(f"{current_idx:<3} | {'00:00':<8} | {'-':<10} | {'-':<10} | {'-':<8} | {'-':<5} | {'-':<8} | {'-':<8} | {'SKIP':<6} | {rel_pdf_path}")
-                continue
+def create_document_traces(docs_dir: str, max_docs: int = None, max_cost: float = None, max_tokens: int = None, force_regeneration: bool = False, workers: int = 5):
+    """Orchestrates the parallel processing of PDF documents."""
+    config = get_config()
+    model_id = config["doc_tracing_model"]
+    
+    if max_tokens is None:
+        max_tokens = config.get("trace_length", 200)
+    
+    trace_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../', config['paths']['traces_dir']))
+    trace_job_dir = os.path.join(trace_root, f"{max_tokens}_{model_id}")
+    os.makedirs(trace_job_dir, exist_ok=True)
 
-            futures.append(executor.submit(
-                process_single_pdf, 
-                pdf_path, documents_dir, job_dir, session_folder, model, 
-                max_tokens, force_regeneration
-            ))
-            submitted_count += 1
+    print(f"STEP 1/2: Scanning documents...", flush=True)
+
+    # Collect all PDF files recursively
+    pdf_files = []
+    for root, _, files in os.walk(docs_dir):
+        if '.hidden' in root: continue
+        for file in files:
+            if file.lower().endswith('.pdf') and not file.endswith('.hidden'):
+                pdf_files.append(os.path.join(root, file))
+
+    if max_docs:
+        pdf_files = pdf_files[:max_docs]
+
+    total_files = len(pdf_files)
+    print(f"Found {total_files} PDF documents.", flush=True)
+    
+    total_cost = 0.0
+    processed_count = 0
+    skipped_count = 0
+    error_count = 0
+    
+    print(f"Analyzing documents (workers: {workers})...", flush=True)
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = {executor.submit(process_single_document, pdf, trace_job_dir, model_id, max_tokens, force_regeneration): pdf for pdf in pdf_files}
         
-        # Monitor completion and cost limits
-        for future in as_completed(futures):
-            if stop_flag.is_set():
+        for i, future in enumerate(as_completed(futures), 1):
+            result = future.result()
+            filename = os.path.basename(result["source"])
+            
+            if result["status"] == "success":
+                processed_count += 1
+                total_cost += result.get("cost", 0)
+                print(f"[{i}/{total_files}] DONE: {filename}", flush=True)
+            elif result["status"] == "skipped":
+                skipped_count += 1
+                print(f"[{i}/{total_files}] SKIP: {filename} (already traced)", flush=True)
+            else:
+                error_count += 1
+                print(f"[{i}/{total_files}] ERROR: {filename} - {result.get('message')}", flush=True)
+            
+            if max_cost and total_cost >= max_cost:
+                print(f"!!! Cost limit reached ({total_cost:.2f} USD). Stopping.", flush=True)
                 break
-            try:
-                future.result() # Wait for completion and catch errors
-            except Exception as e:
-                logger.error(f"Worker thread failed: {e}")
-                
-            # Cost limit check
-            with stats_lock:
-                if max_cost and totals["cost"] >= max_cost:
-                    stop_flag.set()
-                    break
-    except KeyboardInterrupt:
-        with print_lock:
-            print(f"\n[!] CTRL+C detected. Shutting down gracefully...")
-        stop_flag.set()
-    finally:
-        executor.shutdown(wait=False, cancel_futures=True)
 
-    print("=" * 120)
-    print("BATCH PROCESSING COMPLETE")
-    print(f"Newly Processed: {totals['docs_processed'] - totals['skipped_docs']} | Skipped: {totals['skipped_docs']}")
-    print(f"Total Tokens In: {totals['input']} | Out: {totals['output']} | Cost: ${totals['cost']:.6f}")
-    print(f"\n[!] To update the knowledge base, run:\n    python src/create_master_session.py {job_dir}")
-    print("=" * 120)
+    print(f"\n--- Tracing Summary ---", flush=True)
+    print(f"Total: {total_files}", flush=True)
+    print(f"Newly processed: {processed_count}", flush=True)
+    print(f"Already existed: {skipped_count}", flush=True)
+    print(f"Errors: {error_count}", flush=True)
+    print(f"Total Cost: {total_cost:.4f} USD\n", flush=True)
 
 if __name__ == "__main__":
     setup_logging()
-    parser = argparse.ArgumentParser(description="Build knowledge base traces for PDFs.")
-    parser.add_argument("--dir", help="Directory containing PDFs to process.")
-    parser.add_argument("--max-docs", type=int, help="Limit number of documents.")
-    parser.add_argument("--max-cost", type=float, help="Limit maximum cost.")
-    parser.add_argument("--max-tokens", type=int, default=200, help="Target summary length.")
-    parser.add_argument("--force-regeneration", action="store_true", help="Force overwrite existing traces.")
+    parser = argparse.ArgumentParser(description="Extract structured knowledge from PDFs using Gemini CLI.")
+    parser.add_argument("--dir", default="data/documents", help="Directory containing PDF documents.")
+    parser.add_argument("--max-docs", type=int, help="Maximum number of documents to process.")
+    parser.add_argument("--max-cost", type=float, help="Stop if total cost exceeds this USD amount.")
+    parser.add_argument("--max-tokens", type=int, help="Target token count for each trace summary.")
+    parser.add_argument("--force-regeneration", action="store_true", help="Reprocess documents even if trace exists.")
     parser.add_argument("--workers", type=int, default=5, help="Number of parallel threads.")
     args = parser.parse_args()
     create_document_traces(args.dir, args.max_docs, args.max_cost, args.max_tokens, args.force_regeneration, args.workers)

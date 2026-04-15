@@ -38,6 +38,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
 from gemini_cli_headless import run_gemini_cli_headless
 from src.utils.config import get_config, setup_logging
 from src.utils.calc_stats import calculate_cost
+from src.utils.hashes import get_or_create_hash_file, ensure_hashes_recursive
 
 # Load environment variables
 from dotenv import load_dotenv
@@ -65,14 +66,21 @@ def load_doc_index():
     try:
         with open(kb_path, 'r', encoding='utf-8') as f:
             content = f.read()
-            # Regex to find <document id="doc_N"> followed by <url>...</url> and <tytul>...</tytul>
-            # Use dotall to match across lines
-            matches = re.finditer(r'<document id="(doc_\d+)">\s*<url>(.*?)</url>.*?<tytul>(.*?)</tytul>', content, re.DOTALL)
-            for m in matches:
-                new_index[m.group(1)] = {
-                    "url": m.group(2).strip(),
-                    "tytul": m.group(3).strip()
-                }
+            # Find <document id="doc_N"> blocks
+            # We look for <url> and <tytul> within each block
+            blocks = re.split(r'<document id="', content)[1:]
+            for block in blocks:
+                id_match = re.match(r'(doc_\d+)">', block)
+                if id_match:
+                    doc_id = id_match.group(1)
+                    url_match = re.search(r'<url>(.*?)</url>', block, flags=re.DOTALL)
+                    title_match = re.search(r'<tytul>(.*?)</tytul>', block, flags=re.DOTALL)
+                    
+                    if url_match and title_match:
+                        new_index[doc_id] = {
+                            "url": url_match.group(1).strip(),
+                            "tytul": title_match.group(1).strip()
+                        }
         
         with doc_index_lock:
             doc_index = new_index
@@ -81,31 +89,25 @@ def load_doc_index():
         logger.error(f"Failed to parse master KB index: {e}")
 
 def translate_doc_links(text: str) -> str:
-    """Replaces document references like [doc_1] or [Title](doc_1) with actual Markdown links [Title](URL)."""
+    """Replaces document references like [doc_1] or doc_1 with actual Markdown links [Title](URL)."""
     with doc_index_lock:
         if not doc_index:
             return text
 
-    def replacer_id_only(m):
+    def replacer(m):
         doc_id = m.group(1)
         doc_info = doc_index.get(doc_id)
         if doc_info:
             return f"[{doc_info['tytul']}]({doc_info['url']})"
         return m.group(0)
 
-    def replacer_with_title(m):
-        title = m.group(1)
-        doc_id = m.group(2)
-        doc_info = doc_index.get(doc_id)
-        if doc_info:
-            return f"[{title}]({doc_info['url']})"
-        return m.group(0)
-
-    # 1. Handle [Title](doc_1) -> [Title](URL)
-    text = re.sub(r'\[([^\]]+)\]\((doc_\d+)\)', replacer_with_title, text)
-
-    # 2. Handle [doc_1] -> [Real Title](URL)
-    text = re.sub(r'\[(doc_\d+)\]', replacer_id_only, text)
+    # 1. Handle bracketed [doc_1] -> [Title](URL)
+    text = re.sub(r'\[(doc_\d+)\]', replacer, text)
+    
+    # 2. Handle raw doc_1 -> [Title](URL) 
+    # Use negative lookbehind to ensure we don't match doc_1 inside a link we just created or existing ones
+    # (i.e. not preceded by ]( )
+    text = re.sub(r'(?<!\]\()\b(doc_\d+)\b', replacer, text)
 
     return text
 
@@ -184,26 +186,29 @@ def build_doc_tree(path, root, show_hidden=False, trace_dir=None):
                 })
             else:
                 if item.lower().endswith('.txt'): continue # Skip meta files
+                if item.lower().endswith('.hash'): continue # Skip hash files
                 
                 # Trace detection
                 has_trace = False
                 trace_url = None
                 if trace_dir and item.lower().endswith('.pdf'):
-                    # Traces usually have the same name as pdf but .json extension
-                    # pdf_rel_no_ext should be e.g. "Materiały edu/Analiza... (2)"
-                    # We remove the .pdf extension and any .hidden suffix
-                    clean_rel_path = rel_path.replace('.hidden', '')
-                    pdf_rel_no_ext = clean_rel_path.rsplit('.', 1)[0]
-                    trace_rel_path = pdf_rel_no_ext + ".json"
+                    # 1. Read hash from the .hash file next to PDF
+                    hash_file_path = full_path + ".hash"
+                    file_hash = None
+                    if os.path.exists(hash_file_path):
+                        try:
+                            with open(hash_file_path, 'r', encoding='utf-8') as f:
+                                file_hash = f.read().strip()
+                        except: pass
                     
-                    # Normalize for OS comparison
-                    trace_full_path = os.path.normpath(os.path.join(trace_dir, trace_rel_path))
-                    
-                    if os.path.exists(trace_full_path):
-                        has_trace = True
-                        # URL for frontend must use forward slashes
-                        safe_trace_rel = trace_rel_path.replace('\\', '/')
-                        trace_url = f"/api/admin/trace-content?relPath={urllib.parse.quote(safe_trace_rel)}"
+                    if file_hash:
+                        # 2. Look for <hash>.json in flat trace_dir
+                        trace_rel_path = f"{file_hash}.json"
+                        trace_full_path = os.path.normpath(os.path.join(trace_dir, trace_rel_path))
+                        
+                        if os.path.exists(trace_full_path):
+                            has_trace = True
+                            trace_url = f"/api/admin/trace-content?relPath={urllib.parse.quote(trace_rel_path)}"
 
                 tree.append({
                     "name": display_name,
@@ -287,19 +292,70 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_error(404, "Admin HTML not found")
             return
 
+        if self.path == '/api/admin/stats':
+            config = get_config()
+            documents_root = os.path.abspath(config['paths']['documents_dir'])
+            trace_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../', config['paths']['traces_dir']))
+            trace_dir = os.path.join(trace_root, f"{config['trace_length']}_{config['doc_tracing_model']}")
+            
+            total_docs = 0
+            docs_with_traces = 0
+            
+            for root, _, files in os.walk(documents_root):
+                if '.hidden' in root: continue
+                for file in files:
+                    if file.lower().endswith('.pdf') and not file.endswith('.hidden'):
+                        total_docs += 1
+                        hash_file = os.path.join(root, file + ".hash")
+                        if os.path.exists(hash_file):
+                            with open(hash_file, 'r') as f:
+                                file_hash = f.read().strip()
+                                if os.path.exists(os.path.join(trace_dir, f"{file_hash}.json")):
+                                    docs_with_traces += 1
+            
+            # Load KB stats
+            kb_stats = {}
+            kb_stats_path = os.path.normpath(os.path.join(os.path.dirname(__file__), '../data/kb_stats.json'))
+            
+            # Current intended trace folder name
+            current_conf_trace_folder = f"{config['trace_length']}_{config['doc_tracing_model']}"
+
+            if os.path.exists(kb_stats_path):
+                try:
+                    with open(kb_stats_path, 'r', encoding='utf-8') as f:
+                        temp_stats = json.load(f)
+                        # VALIDATION: Only use stats if they match the CURRENT configuration
+                        # kb_stats.json stores "trace_dir": "data/traces/200_gemini-3-flash-preview"
+                        saved_trace_dir = temp_stats.get("trace_dir", "")
+                        if current_conf_trace_folder in saved_trace_dir:
+                            kb_stats = temp_stats
+                        else:
+                            logger.info(f"Ignoring kb_stats.json (outdated config: {saved_trace_dir} vs expected {current_conf_trace_folder})")
+                except Exception as e:
+                    logger.error(f"Error reading kb_stats.json: {e}")
+
+            stats = {
+                "total_docs": total_docs,
+                "docs_with_traces": docs_with_traces,
+                "kb_tokens": kb_stats.get("token_count", 0),
+                "last_sync": kb_stats.get("timestamp", "Wymagana synchronizacja"),
+                "current_model": config["doc_tracing_model"],
+                "trace_length": config["trace_length"]
+            }
+            
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps(stats).encode('utf-8'))
+            return
+
         if self.path == '/api/admin/documents':
             config = get_config()
             documents_root = os.path.abspath(config['paths']['documents_dir'])
             
-            # Find current trace dir from master KB
-            kb_path = os.path.join(os.path.dirname(__file__), '../data/master_knowledge_base.md')
-            trace_dir = None
-            if os.path.exists(kb_path):
-                with open(kb_path, 'r', encoding='utf-8') as f:
-                    for line in f:
-                        if line.startswith("**Katalog źródłowy:**"):
-                            trace_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', line.split("**Katalog źródłowy:**")[1].strip()))
-                            break
+            # Derive trace dir from config
+            trace_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../', config['paths']['traces_dir']))
+            trace_dir = os.path.join(trace_root, f"{config['trace_length']}_{config['doc_tracing_model']}")
 
             doc_tree = build_doc_tree(documents_root, documents_root, show_hidden=True, trace_dir=trace_dir)
             self.send_response(200)
@@ -316,19 +372,10 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_error(400, "Missing relPath")
                 return
 
-            kb_path = os.path.join(os.path.dirname(__file__), '../data/master_knowledge_base.md')
-            trace_dir = None
-            if os.path.exists(kb_path):
-                with open(kb_path, 'r', encoding='utf-8') as f:
-                    for line in f:
-                        if line.startswith("**Katalog źródłowy:**"):
-                            trace_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', line.split("**Katalog źródłowy:**")[1].strip()))
-                            break
+            config = get_config()
+            trace_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../', config['paths']['traces_dir']))
+            trace_dir = os.path.join(trace_root, f"{config['trace_length']}_{config['doc_tracing_model']}")
             
-            if not trace_dir:
-                self.send_error(404, "Trace directory not found in KB")
-                return
-
             file_path = os.path.abspath(os.path.join(trace_dir, rel_path.replace('/', os.sep)))
             if not file_path.startswith(trace_dir):
                 self.send_error(403, "Access denied")
@@ -342,6 +389,21 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
                     self.wfile.write(f.read())
             else:
                 self.send_error(404, "Trace file not found")
+            return
+
+        if self.path == '/api/admin/sync-log':
+            log_path = os.path.join(os.path.dirname(__file__), '../data/run/sync.log')
+            content = ""
+            if os.path.exists(log_path):
+                try:
+                    with open(log_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                except: pass
+            
+            self.send_response(200)
+            self.send_header('Content-type', 'text/plain; charset=utf-8')
+            self.end_headers()
+            self.wfile.write(content.encode('utf-8'))
             return
 
         # Securely serve user audio files (only if the filename contains the current session's chatId)
@@ -552,6 +614,21 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_json_error(500, str(e))
             return
 
+        if self.path == '/api/admin/sync-log':
+            log_path = os.path.join(os.path.dirname(__file__), '../data/run/sync.log')
+            content = ""
+            if os.path.exists(log_path):
+                try:
+                    with open(log_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                except: pass
+            
+            self.send_response(200)
+            self.send_header('Content-type', 'text/plain; charset=utf-8')
+            self.end_headers()
+            self.wfile.write(content.encode('utf-8'))
+            return
+
         if self.path == '/api/admin/sync':
             try:
                 content_length = int(self.headers['Content-Length'])
@@ -562,54 +639,80 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
                     self.send_json_error(401, "Nieprawidłowe hasło.")
                     return
 
-                # Parse master KB to find original trace folder and max_tokens
-                kb_path = os.path.join(os.path.dirname(__file__), '../data/master_knowledge_base.md')
-                source_dir = "data/traces/200_gemini-3-flash-preview" # Fallback
-                max_tokens = 200
-                if os.path.exists(kb_path):
-                    with open(kb_path, 'r', encoding='utf-8') as f:
-                        for line in f:
-                            if line.startswith("**Katalog źródłowy:**"):
-                                source_dir = line.split("**Katalog źródłowy:**")[1].strip()
-                                # Try to extract tokens from folder name e.g. "data/traces/500_model"
-                                folder_name = os.path.basename(source_dir)
-                                if '_' in folder_name:
-                                    try:
-                                        max_tokens = int(folder_name.split('_')[0])
-                                    except: pass
-                                break
+                config = get_config()
+                trace_length = config.get('trace_length', 200)
+                doc_model = config.get('doc_tracing_model')
                 
-                import subprocess
-                # 1. Run trace creation
-                trace_script = os.path.join(os.path.dirname(__file__), './create_document_traces.py')
-                logger.info(f"Starting sync: Tracing documents with max_tokens={max_tokens}...")
+                log_dir = os.path.join(os.path.dirname(__file__), '../data/run')
+                os.makedirs(log_dir, exist_ok=True)
+                log_path = os.path.join(log_dir, 'sync.log')
                 
-                # We'll run with default workers (5) and no force regeneration
-                res1 = subprocess.run([sys.executable, trace_script, "--max-tokens", str(max_tokens)], capture_output=True, text=True)
-                if res1.returncode != 0:
-                    logger.error(f"Trace creation failed: {res1.stderr}")
-                    self.send_json_error(500, f"Błąd podczas tworzenia śladów: {res1.stderr}")
-                    return
+                # Clear old log
+                with open(log_path, 'w', encoding='utf-8') as f:
+                    f.write(f"--- Synchronizacja rozpoczęta: {time.strftime('%Y-%m-%d %H:%M:%S')} ---\n")
 
-                # 2. Run master session creation
-                master_script = os.path.join(os.path.dirname(__file__), './create_master_session.py')
-                logger.info(f"Starting sync: Building master session from {source_dir}...")
-                res2 = subprocess.run([sys.executable, master_script, source_dir], capture_output=True, text=True)
-                
-                if res2.returncode != 0:
-                    logger.error(f"Master session creation failed: {res2.stderr}")
-                    self.send_json_error(500, f"Błąd podczas generowania sesji: {res2.stderr}")
-                    return
+                def run_sync_in_thread():
+                    try:
+                        import subprocess
+                        trace_script = os.path.join(os.path.dirname(__file__), './create_document_traces.py')
+                        master_script = os.path.join(os.path.dirname(__file__), './create_master_session.py')
+                        trace_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../', config['paths']['traces_dir']))
+                        trace_job_dir = os.path.join(trace_root, f"{trace_length}_{doc_model}")
 
-                # 3. Reload doc index for the server
-                load_doc_index()
+                        # Force UTF-8 for subprocesses
+                        env = os.environ.copy()
+                        env["PYTHONIOENCODING"] = "utf-8"
+
+                        # 1. Tracing
+                        logger.info("Sync Thread: Starting Tracing...")
+                        with open(log_path, 'a', encoding='utf-8') as log_f:
+                            process1 = subprocess.Popen(
+                                [sys.executable, trace_script, "--max-tokens", str(trace_length)],
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, 
+                                bufsize=1, universal_newlines=True, encoding='utf-8', env=env
+                            )
+                            for line in process1.stdout:
+                                log_f.write(line)
+                                log_f.flush()
+                                logger.info(f"[Sync Trace] {line.strip()}")
+                            process1.wait()
+                            
+                            if process1.returncode != 0:
+                                log_f.write(f"\nBŁĄD: Proces tworzenia śladów zakończył się kodem {process1.returncode}\n")
+                                return
+
+                            # 2. Master Session
+                            log_f.write("\n")
+                            process2 = subprocess.Popen(
+                                [sys.executable, master_script, trace_job_dir],
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, 
+                                bufsize=1, universal_newlines=True, encoding='utf-8', env=env
+                            )
+                            for line in process2.stdout:
+                                log_f.write(line)
+                                log_f.flush()
+                                logger.info(f"[Sync KB] {line.strip()}")
+                            process2.wait()
+
+                            if process2.returncode == 0:
+                                log_f.write(f"\n--- Synchronizacja zakończona sukcesem o {time.strftime('%H:%M:%S')} ---\n")
+                                load_doc_index()
+                            else:
+                                log_f.write(f"\nBŁĄD: Proces budowania sesji zakończył się kodem {process2.returncode}\n")
+                    except Exception as e:
+                        logger.error(f"Sync Thread Error: {e}")
+                        with open(log_path, 'a', encoding='utf-8') as log_f:
+                            log_f.write(f"\nBŁĄD KRYTYCZNY: {str(e)}\n")
+
+                # Start the sync in a background thread so the HTTP request returns immediately
+                threading.Thread(target=run_sync_in_thread, daemon=True).start()
                 
                 self.send_response(200)
                 self.send_header('Content-type', 'application/json')
                 self.end_headers()
-                self.wfile.write(json.dumps({"success": True, "output": res1.stdout + "\n" + res2.stdout}).encode())
+                self.wfile.write(json.dumps({"success": True, "message": "Sync started"}).encode())
             except Exception as e:
-                logger.error(f"Error during sync: {e}")
+                logger.error(f"Error starting sync: {e}")
                 self.send_json_error(500, str(e))
             return
 
@@ -634,20 +737,18 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
                 with open(correction_path, 'w', encoding='utf-8') as f:
                     f.write(content)
                     
-                # Parse master KB to find original trace folder
-                kb_path = os.path.join(os.path.dirname(__file__), '../data/master_knowledge_base.md')
-                source_dir = "data/traces/200_gemini-3-flash-preview" # Fallback
-                if os.path.exists(kb_path):
-                    with open(kb_path, 'r', encoding='utf-8') as f:
-                        for line in f:
-                            if line.startswith("**Katalog źródłowy:**"):
-                                source_dir = line.split("**Katalog źródłowy:**")[1].strip()
-                                break
+                config = get_config()
+                trace_length = config.get('trace_length', 200)
+                doc_model = config.get('doc_tracing_model')
+                
+                # Derive trace folder
+                trace_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../', config['paths']['traces_dir']))
+                trace_job_dir = os.path.join(trace_root, f"{trace_length}_{doc_model}")
                 
                 # Execute create_master_session.py
                 import subprocess
                 script_path = os.path.join(os.path.dirname(__file__), './create_master_session.py')
-                result = subprocess.run([sys.executable, script_path, source_dir], capture_output=True, text=True)
+                result = subprocess.run([sys.executable, script_path, trace_job_dir], capture_output=True, text=True)
                 
                 if result.returncode != 0:
                     logger.error(f"Error creating master session: {result.stderr}\n{result.stdout}")
