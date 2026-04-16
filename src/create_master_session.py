@@ -145,6 +145,7 @@ def create_master_session(trace_dir: str = None):
 
     # Create Master Session for LLM
     master_prompt = "".join(llm_kb_parts)
+    master_prompt += "\n\nCRITICAL INSTRUCTION FOR INITIALIZATION: Acknowledge the receipt of this knowledge base by replying EXACTLY with 'OK'. DO NOT use any tools. DO NOT analyze the text. DO NOT summarize. Just reply 'OK'."
     print(f"Creating Master Session for {config['answer_model']} (this may take 10-30s)...", flush=True)
     
     session = run_gemini_cli_headless(
