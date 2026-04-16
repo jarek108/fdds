@@ -172,10 +172,18 @@ def _execute_single_run(
     prompt_path = None
     
     try:
+        # Generate temporary files in a location the CLI can definitely access
+        temp_dir = os.path.join(os.path.expanduser("~"), ".gemini", "tmp", project_name, "run")
+        os.makedirs(temp_dir, exist_ok=True)
+
         # 1. Generate Policy
         if allowed_tools is not None or allowed_paths is not None:
             tools_whitelist = allowed_tools if allowed_tools is not None else DEFAULT_ALLOWED_TOOLS
+            
+            # Default paths: cwd AND the temp run directory (so it can read its own prompt)
             paths_whitelist = allowed_paths if allowed_paths is not None else [cwd if cwd else os.getcwd()]
+            if temp_dir not in paths_whitelist and "*" not in paths_whitelist:
+                paths_whitelist.append(temp_dir)
             
             policy_lines = []
             if tools_whitelist != ["*"]:
@@ -194,13 +202,13 @@ def _execute_single_run(
                     policy_lines.append(f"    - \"{abs_p}\"")
             
             if policy_lines:
-                with tempfile.NamedTemporaryFile(mode='w', suffix=".yaml", delete=False, encoding='utf-8') as tf:
+                with tempfile.NamedTemporaryFile(mode='w', suffix=".yaml", dir=temp_dir, delete=False, encoding='utf-8') as tf:
                     tf.write("\n".join(policy_lines))
                     policy_path = tf.name
                 cmd.extend(["--policy", policy_path])
 
-        # 2. Generate Prompt File (Bypasses stdin issues for large prompts)
-        with tempfile.NamedTemporaryFile(mode='w', suffix=".txt", delete=False, encoding='utf-8') as tf:
+        # 2. Generate Prompt File
+        with tempfile.NamedTemporaryFile(mode='w', suffix=".txt", dir=temp_dir, delete=False, encoding='utf-8') as tf:
             tf.write(prompt)
             for att in attachment_strings:
                 tf.write(att)
@@ -217,24 +225,30 @@ def _execute_single_run(
         # DEBUG: Print full command
         logger.debug(f"Executing Gemini CLI: {' '.join(cmd)}")
 
-        # Execute using communicate to handle large inputs/outputs without deadlock
+        # Execute using readline() loop to support stream_output=True without deadlocks
         process = subprocess.Popen(
             cmd,
             cwd=cwd,
             env=env,
-            stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
-            encoding='utf-8'
+            encoding='utf-8',
+            bufsize=1
         )
 
-        # communicate() handles writing to stdin and reading from stdout/stderr concurrently
-        # Since we use @prompt_path, we don't have stdin content here, but it's safe to pass None
-        combined_output, _ = process.communicate()
-        
-        if stream_output:
-            print(combined_output)
+        combined_output = ""
+        while True:
+            line = process.stdout.readline()
+            if not line and process.poll() is not None:
+                break
+            if line:
+                combined_output += line
+                if stream_output:
+                    print(line, end="", flush=True)
+
+        process.stdout.close()
+        process.wait()
 
         # Parse Output
         start_idx = combined_output.find('{')
@@ -244,11 +258,33 @@ def _execute_single_run(
         
         data = json.loads(combined_output[start_idx:end_idx+1])
         
+        # Robustly extract text/response
+        text_content = data.get("text") or data.get("response") or ""
+        
+        # Robustly extract stats
+        stats_data = data.get("trace", {}).get("stats") or data.get("stats") or {}
+        
+        # If stats are categorized by model (newer CLI), aggregate them for backward compatibility
+        if "models" in stats_data and not any(k in stats_data for k in ["inputTokens", "outputTokens"]):
+            aggregated_stats = {
+                "inputTokens": 0,
+                "outputTokens": 0,
+                "thoughtTokens": 0,
+                "cachedTokens": 0
+            }
+            for model_stats in stats_data.get("models", {}).values():
+                tokens = model_stats.get("tokens", {})
+                aggregated_stats["inputTokens"] += tokens.get("input", 0)
+                aggregated_stats["outputTokens"] += tokens.get("candidates", 0)
+                aggregated_stats["thoughtTokens"] += tokens.get("thoughts", 0)
+                aggregated_stats["cachedTokens"] += tokens.get("cached", 0)
+            stats_data.update(aggregated_stats)
+
         return GeminiSession(
-            text=data.get("text", ""),
+            text=text_content,
             session_id=data.get("session_id") or session_id_to_use,
             session_path=_find_session_file(cli_dir, data.get('session_id') or session_id_to_use or ""),
-            stats=data.get("trace", {}).get("stats", {}),
+            stats=stats_data,
             raw_data=data
         )
 
