@@ -958,7 +958,8 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
                         model_id=model,
                         files=gemini_files,
                         session_to_resume=user_session_file,
-                        stream_output=True
+                        stream_output=True,
+                        allowed_tools=DEFAULT_ALLOWED_TOOLS
                     )
                 # Copy updated session back to project
                     shutil.copy2(session.session_path, user_session_file)
