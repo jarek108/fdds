@@ -56,15 +56,12 @@ Zwróć dokładnie taką strukturę:
         s = {}
         
         for attempt in range(max_retries):
-            import tempfile
-            with tempfile.TemporaryDirectory() as empty_cwd:
-                session = run_gemini_cli_headless(
-                    prompt=prompt,
-                    model_id=model_id,
-                    files=[pdf_path],
-                    allowed_tools=[],
-                    cwd=empty_cwd
-                )
+            session = run_gemini_cli_headless(
+                prompt=prompt,
+                model_id=model_id,
+                files=[pdf_path],
+                allowed_tools=[]
+            )
             
             # Accumulate stats across retries
             s_current = session.stats

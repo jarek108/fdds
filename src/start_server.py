@@ -959,7 +959,8 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
                         files=gemini_files,
                         session_to_resume=user_session_file,
                         stream_output=True,
-                        allowed_tools=DEFAULT_ALLOWED_TOOLS
+                        allowed_tools=DEFAULT_ALLOWED_TOOLS,
+                        allowed_paths=[os.path.abspath("./data")]
                     )
                 # Copy updated session back to project
                     shutil.copy2(session.session_path, user_session_file)

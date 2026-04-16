@@ -150,14 +150,12 @@ def create_master_session(trace_dir: str = None):
     
     print(f"Creating Master Session for {config['answer_model']} (this may take 10-30s)...", flush=True)
     
-    with tempfile.TemporaryDirectory() as empty_cwd:
-        session = run_gemini_cli_headless(
-            prompt=master_prompt,
-            model_id=config["answer_model"],
-            allowed_tools=[],
-            stream_output=True,
-            cwd=empty_cwd  # Run in empty temp dir to escape global GEMINI.md personas
-        )
+    session = run_gemini_cli_headless(
+        prompt=master_prompt,
+        model_id=config["answer_model"],
+        allowed_tools=[],
+        stream_output=True
+    )
     
     master_session_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../', config['paths']['master_session_file']))
     os.makedirs(os.path.dirname(master_session_path), exist_ok=True)
