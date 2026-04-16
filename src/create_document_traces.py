@@ -9,7 +9,7 @@ import time
 
 # Add project root to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
-from src.utils.gemini_cli_headless import run_gemini_cli_headless
+from gemini_cli_headless import run_gemini_cli_headless
 from src.utils.config import get_config, setup_logging
 from src.utils.hashes import get_or_create_hash_file
 from src.utils.calc_stats import calculate_cost
@@ -56,12 +56,15 @@ Zwróć dokładnie taką strukturę:
         s = {}
         
         for attempt in range(max_retries):
-            session = run_gemini_cli_headless(
-                prompt=prompt,
-                model_id=model_id,
-                files=[pdf_path],
-                allowed_tools=[]
-            )
+            import tempfile
+            with tempfile.TemporaryDirectory() as empty_cwd:
+                session = run_gemini_cli_headless(
+                    prompt=prompt,
+                    model_id=model_id,
+                    files=[pdf_path],
+                    allowed_tools=[],
+                    cwd=empty_cwd
+                )
             
             # Accumulate stats across retries
             s_current = session.stats

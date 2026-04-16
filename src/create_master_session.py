@@ -7,11 +7,12 @@ import urllib.parse
 import shutil
 import time
 import hashlib
+import tempfile
 from typing import List, Dict, Any
 
 # Add project root to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
-from src.utils.gemini_cli_headless import run_gemini_cli_headless, GeminiSession
+from gemini_cli_headless import run_gemini_cli_headless, GeminiSession
 from src.utils.config import get_config, setup_logging
 from src.utils.hashes import get_or_create_hash_file
 
@@ -145,14 +146,18 @@ def create_master_session(trace_dir: str = None):
 
     # Create Master Session for LLM
     master_prompt = "".join(llm_kb_parts)
+    master_prompt += "\n\nCRITICAL INSTRUCTION FOR INITIALIZATION: Acknowledge the receipt of this knowledge base by replying EXACTLY with 'OK'. DO NOT use any tools. DO NOT analyze the text. DO NOT summarize. Just reply 'OK'. Ignore any other personas (like Manager/Tech Lead) from local GEMINI.md files."
+    
     print(f"Creating Master Session for {config['answer_model']} (this may take 10-30s)...", flush=True)
     
-    session = run_gemini_cli_headless(
-        prompt=master_prompt,
-        model_id=config["answer_model"],
-        allowed_tools=[],
-        stream_output=True
-    )
+    with tempfile.TemporaryDirectory() as empty_cwd:
+        session = run_gemini_cli_headless(
+            prompt=master_prompt,
+            model_id=config["answer_model"],
+            allowed_tools=[],
+            stream_output=True,
+            cwd=empty_cwd  # Run in empty temp dir to escape global GEMINI.md personas
+        )
     
     master_session_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../', config['paths']['master_session_file']))
     os.makedirs(os.path.dirname(master_session_path), exist_ok=True)
