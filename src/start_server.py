@@ -1,4 +1,4 @@
-"""
+﻿"""
 Hosts the frontend Web UI and handles API requests by cloning isolated sessions for each user.
 
 Prerequisite: 
@@ -32,10 +32,11 @@ import shutil
 import glob
 import cgi
 from typing import Dict, Any
+import google.generativeai as genai
 
 # Add project root to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
-from gemini_cli_headless import run_gemini_cli_headless, DEFAULT_ALLOWED_TOOLS 
+from src.utils.gemini_cli_headless import run_gemini_cli_headless, DEFAULT_ALLOWED_TOOLS 
 from src.utils.config import get_config, setup_logging
 from src.utils.calc_stats import calculate_cost
 from src.utils.hashes import get_or_create_hash_file, ensure_hashes_recursive
@@ -495,7 +496,7 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
                 request_json = json.loads(post_data)
 
                 if not check_admin_auth(request_json):
-                    self.send_json_error(401, "Nieprawidłowe hasło.")
+                    self.send_json_error(401, "NieprawidÅ‚owe hasÅ‚o.")
                     return
 
                 rel_path = request_json.get('relPath')
@@ -535,7 +536,7 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
                 request_json = json.loads(post_data)
 
                 if not check_admin_auth(request_json):
-                    self.send_json_error(401, "Nieprawidłowe hasło.")
+                    self.send_json_error(401, "NieprawidÅ‚owe hasÅ‚o.")
                     return
 
                 rel_path = request_json.get('relPath')
@@ -566,9 +567,9 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
                     if os.path.exists(kb_path):
                         with open(kb_path, 'r', encoding='utf-8') as f:
                             first_lines = [f.readline() for _ in range(5)]
-                            source_dir_line = next((l for l in first_lines if l.startswith("**Katalog źródłowy:**")), None)
+                            source_dir_line = next((l for l in first_lines if l.startswith("**Katalog ÅºrÃ³dÅ‚owy:**")), None)
                             if source_dir_line:
-                                trace_job_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', source_dir_line.split("**Katalog źródłowy:**")[1].strip()))
+                                trace_job_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', source_dir_line.split("**Katalog ÅºrÃ³dÅ‚owy:**")[1].strip()))
                                 
                                 # Trace file matches the rel_path but with .json
                                 trace_rel_path = rel_path.rsplit('.', 1)[0] + ".json"
@@ -600,7 +601,7 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
                 request_json = json.loads(post_data)
 
                 if not check_admin_auth(request_json):
-                    self.send_json_error(401, "Nieprawidłowe hasło.")
+                    self.send_json_error(401, "NieprawidÅ‚owe hasÅ‚o.")
                     return
 
                 parent_rel_path = request_json.get('parentPath', '')
@@ -639,7 +640,7 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
                 
                 password = form.getfirst("password")
                 if not check_admin_auth({"password": password}):
-                    self.send_json_error(401, "Nieprawidłowe hasło.")
+                    self.send_json_error(401, "NieprawidÅ‚owe hasÅ‚o.")
                     return
 
                 parent_rel_path = form.getfirst("parentPath", "")
@@ -698,7 +699,7 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
                 request_json = json.loads(post_data)
 
                 if not check_admin_auth(request_json):
-                    self.send_json_error(401, "Nieprawidłowe hasło.")
+                    self.send_json_error(401, "NieprawidÅ‚owe hasÅ‚o.")
                     return
 
                 config = get_config()
@@ -711,7 +712,7 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
                 
                 # Clear old log
                 with open(log_path, 'w', encoding='utf-8') as f:
-                    f.write(f"--- Synchronizacja rozpoczęta: {time.strftime('%Y-%m-%d %H:%M:%S')} ---\n")
+                    f.write(f"--- Synchronizacja rozpoczÄ™ta: {time.strftime('%Y-%m-%d %H:%M:%S')} ---\n")
 
                 def run_sync_in_thread():
                     try:
@@ -740,7 +741,7 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
                             process1.wait()
                             
                             if process1.returncode != 0:
-                                log_f.write(f"\nBŁĄD: Proces tworzenia śladów zakończył się kodem {process1.returncode}\n")
+                                log_f.write(f"\nBÅÄ„D: Proces tworzenia Å›ladÃ³w zakoÅ„czyÅ‚ siÄ™ kodem {process1.returncode}\n")
                                 return
 
                             # 2. Master Session
@@ -757,14 +758,14 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
                             process2.wait()
 
                             if process2.returncode == 0:
-                                log_f.write(f"\n--- Synchronizacja zakończona sukcesem o {time.strftime('%H:%M:%S')} ---\n")
+                                log_f.write(f"\n--- Synchronizacja zakoÅ„czona sukcesem o {time.strftime('%H:%M:%S')} ---\n")
                                 load_doc_index()
                             else:
-                                log_f.write(f"\nBŁĄD: Proces budowania sesji zakończył się kodem {process2.returncode}\n")
+                                log_f.write(f"\nBÅÄ„D: Proces budowania sesji zakoÅ„czyÅ‚ siÄ™ kodem {process2.returncode}\n")
                     except Exception as e:
                         logger.error(f"Sync Thread Error: {e}")
                         with open(log_path, 'a', encoding='utf-8') as log_f:
-                            log_f.write(f"\nBŁĄD KRYTYCZNY: {str(e)}\n")
+                            log_f.write(f"\nBÅÄ„D KRYTYCZNY: {str(e)}\n")
 
                 # Start the sync in a background thread so the HTTP request returns immediately
                 threading.Thread(target=run_sync_in_thread, daemon=True).start()
@@ -790,7 +791,7 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
                 provided_password = request_json.get('password')
                 
                 if expected_password and provided_password != expected_password:
-                    self.send_json_error(401, "Nieprawidłowe hasło.")
+                    self.send_json_error(401, "NieprawidÅ‚owe hasÅ‚o.")
                     return
                 
                 content = request_json.get('content', '')
@@ -814,7 +815,7 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
                 
                 if result.returncode != 0:
                     logger.error(f"Error creating master session: {result.stderr}\n{result.stdout}")
-                    self.send_json_error(500, "Błąd w aktualizacji wiedzy")
+                    self.send_json_error(500, "BÅ‚Ä…d w aktualizacji wiedzy")
                     return
                 
                 # Reload document index
@@ -826,7 +827,7 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
                 self.wfile.write(json.dumps({"success": True}).encode())
             except Exception as e:
                 logger.error(f"Error saving corrections: {e}")
-                self.send_json_error(500, "Błąd podczas zapisywania poprawek")
+                self.send_json_error(500, "BÅ‚Ä…d podczas zapisywania poprawek")
             return
 
         if self.path == '/ask':
@@ -871,7 +872,7 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
                     self.send_header('Content-type', 'application/json')
                     self.end_headers()
                     self.wfile.write(json.dumps({
-                        "answer": f"⚠️ Przekroczono limit kosztów dla tej sesji ({session_limit} USD). Odśwież stronę, aby rozpocząć nową sesję.",
+                        "answer": f"âš ï¸ Przekroczono limit kosztÃ³w dla tej sesji ({session_limit} USD). OdÅ›wieÅ¼ stronÄ™, aby rozpoczÄ…Ä‡ nowÄ… sesjÄ™.",
                         "stats": {"duration": "0.0s", "input": 0, "output": 0, "thoughts": 0, "cached": 0, "cost": 0.0},
                         "audioUrl": None
                     }).encode())
@@ -882,7 +883,7 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
                     self.send_header('Content-type', 'application/json')
                     self.end_headers()
                     self.wfile.write(json.dumps({
-                        "answer": f"⚠️ Przekroczono globalny limit godzinowy serwera ({hourly_limit} USD). Spróbuj ponownie później.",
+                        "answer": f"âš ï¸ Przekroczono globalny limit godzinowy serwera ({hourly_limit} USD). SprÃ³buj ponownie pÃ³Åºniej.",
                         "stats": {"duration": "0.0s", "input": 0, "output": 0, "thoughts": 0, "cached": 0, "cost": 0.0},
                         "audioUrl": None
                     }).encode())
@@ -893,7 +894,7 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
                     self.send_header('Content-type', 'application/json')
                     self.end_headers()
                     self.wfile.write(json.dumps({
-                        "answer": f"⚠️ Przekroczono globalny limit dzienny serwera ({daily_limit} USD). Spróbuj ponownie jutro.",
+                        "answer": f"âš ï¸ Przekroczono globalny limit dzienny serwera ({daily_limit} USD). SprÃ³buj ponownie jutro.",
                         "stats": {"duration": "0.0s", "input": 0, "output": 0, "thoughts": 0, "cached": 0, "cost": 0.0},
                         "audioUrl": None
                     }).encode())
@@ -936,6 +937,7 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
                 # Handle Audio
                 gemini_files = []
                 audio_url = None
+                transcription = None
                 if audio_base64:
                     audio_dir = os.path.join(os.path.dirname(__file__), '../data/user_audio')
                     os.makedirs(audio_dir, exist_ok=True)
@@ -944,11 +946,35 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
                     audio_path = os.path.join(audio_dir, audio_filename)
                     with open(audio_path, "wb") as audio_f:
                         audio_f.write(base64.b64decode(audio_base64))
-                    gemini_files.append(audio_path)
                     audio_url = f"/audio/{audio_filename}?chatId={chat_id}"
-                    if not user_query:
-                        user_query = "Odpowiedz na pytanie zadane w nagraniu audio."
-
+                    
+                    try:
+                        logger.info(f"Transcribing audio using google-generativeai ({audio_path})...")
+                        api_key = os.environ.get("GEMINI_API_KEY")
+                        if api_key:
+                            genai.configure(api_key=api_key)
+                            sample_file = genai.upload_file(path=audio_path)
+                            transcription_model = genai.GenerativeModel("gemini-2.5-flash")
+                            response = transcription_model.generate_content(["Please transcribe this audio. Respond ONLY with the transcription, nothing else.", sample_file])
+                            transcription = response.text.strip()
+                            logger.info(f"Transcribed audio: {transcription}")
+                            
+                            if user_query:
+                                user_query = f"Tekst z nagrania audio: {transcription}\n\n{user_query}"
+                            else:
+                                user_query = transcription
+                                
+                            try:
+                                genai.delete_file(sample_file.name)
+                            except Exception as del_err:
+                                logger.warning(f"Failed to delete remote file: {del_err}")
+                        else:
+                            raise ValueError("GEMINI_API_KEY is not set.")
+                            
+                    except Exception as e:
+                        logger.error(f"Transcription failed: {e}")
+                        if not user_query:
+                            user_query = "Odpowiedz na pytanie zadane w nagraniu audio."
                 # Run model
                 start_time = time.time()
                 try:
@@ -1021,8 +1047,10 @@ class GeminiHandler(http.server.SimpleHTTPRequestHandler):
                 self.wfile.write(json.dumps({
                     "answer": final_answer,
                     "stats": flattened_stats,
-                    "audioUrl": audio_url
+                    "audioUrl": audio_url,
+                    "transcription": transcription
                 }).encode())
+                
                 
             except Exception as e:
                 logger.exception("Internal Server Error")
@@ -1114,3 +1142,4 @@ def run_server():
 
 if __name__ == "__main__":
     run_server()
+

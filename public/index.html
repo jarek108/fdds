@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -386,10 +386,22 @@
                 if (data.error) {
                     appendMessage(`Error: ${data.error}`, 'error');
                 } else {
-                    // 2. If audio was sent, update the USER'S bubble with the playback player
-                    if (data.audioUrl && userMsgBubble) {
-                        const audioPlayerHtml = `<audio controls src="${data.audioUrl}" style="margin-top: 8px; max-width: 100%; display: block; height: 35px;"></audio>`;
-                        userMsgBubble.innerHTML += audioPlayerHtml;
+                    // 2. If audio was sent, update the USER'S bubble with the playback player and transcription
+                    if (userMsgBubble && audioBase64) {
+                        let newHtml = '';
+                        if (data.transcription) {
+                            newHtml += `<div>🎤 ${data.transcription}</div>`;
+                        } else if (!question) {
+                            newHtml += `<div>🎤 [Wiadomość głosowa]</div>`;
+                        } else {
+                            newHtml += `<div>${question}</div>`;
+                        }
+                        
+                        if (data.audioUrl) {
+                            newHtml += `<audio controls src="${data.audioUrl}" style="margin-top: 8px; max-width: 100%; display: block; height: 35px;"></audio>`;
+                        }
+                        
+                        userMsgBubble.innerHTML = newHtml;
                     }
 
                     // 3. Append Gemini response (without audioUrl, as it belongs to the user)

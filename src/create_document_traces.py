@@ -9,7 +9,7 @@ import time
 
 # Add project root to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
-from gemini_cli_headless import run_gemini_cli_headless
+from src.utils.gemini_cli_headless import run_gemini_cli_headless
 from src.utils.config import get_config, setup_logging
 from src.utils.hashes import get_or_create_hash_file
 from src.utils.calc_stats import calculate_cost
