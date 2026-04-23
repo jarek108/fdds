@@ -6,6 +6,11 @@ Handles project root discovery, config.json loading, and system path constants.
 import os
 import json
 import logging
+import warnings
+
+# Suppress annoying Google SDK and environment warnings
+warnings.filterwarnings("ignore", category=FutureWarning, message=".*google.api_core.*")
+warnings.filterwarnings("ignore", category=FutureWarning, message=".*google.generativeai.*")
 
 def get_project_root():
     """Returns the absolute path to the project root."""

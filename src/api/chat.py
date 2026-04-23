@@ -5,12 +5,16 @@ import uuid
 import time
 import base64
 import shutil
+import warnings
 from fastapi import APIRouter, HTTPException
 from gemini_cli_headless import run_gemini_cli_headless
 from src.utils.config import get_config, PATHS
 from src.utils.calc_stats import parse_session_stats
 from src.services.storage import storage
-import google.generativeai as genai
+
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", category=FutureWarning)
+    import google.generativeai as genai
 
 router = APIRouter()
 logger = logging.getLogger("chat_api")
