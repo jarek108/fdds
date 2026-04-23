@@ -16,6 +16,7 @@ import argparse
 import os
 import glob
 from datetime import datetime
+from typing import Dict, Any, Optional
 
 # Pricing table per 1,000,000 tokens
 PRICING = {
@@ -47,6 +48,39 @@ def calculate_cost(model_name: str, input_tokens: int, output_tokens: int, cache
                (output_tokens / 1_000_000 * p["output"]) + \
                (cached_tokens / 1_000_000 * p["cached"])
     return cost
+
+def parse_session_stats(official_stats: Dict[str, Any], model_id: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Centralized logic to flatten and rename nested CLI stats into the FDDS project format.
+    Renames 'candidates' to 'output' and sums tokens across models if necessary.
+    """
+    flat = {
+        "input": 0,
+        "output": 0,
+        "cached": 0,
+        "thoughts": 0,
+        "calls": 1
+    }
+    
+    models = official_stats.get("models", {})
+    if not models:
+        # Fallback for simple/empty stats
+        return flat
+    
+    # If a specific model_id was used, prioritize it. Otherwise, aggregate all.
+    target_models = [model_id] if model_id and model_id in models else models.keys()
+    
+    for mid in target_models:
+        m_data = models.get(mid, {})
+        tokens = m_data.get("tokens", {})
+        
+        # Mapping: input/prompt -> input, candidates -> output
+        flat["input"] += tokens.get("input") or tokens.get("prompt") or 0
+        flat["output"] += tokens.get("candidates") or 0
+        flat["cached"] += tokens.get("cached") or 0
+        flat["thoughts"] += tokens.get("thoughts") or 0
+        
+    return flat
 
 def analyze_session(file_path):
     if not os.path.exists(file_path):

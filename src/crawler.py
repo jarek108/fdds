@@ -2,9 +2,6 @@
 Interacts with the FDDS Moodle platform to scrape HTML structures, map course hierarchies, 
 and autonomously download raw source documents (PDFs, brochures, scenarios).
 
-Prerequisite: 
-Requires 'moodle_url' and paths configured in `config/config.json`.
-
 Usage Examples:
     # Map the Moodle platform with default settings (max 50 nodes, depth 3)
     python src/crawler.py
@@ -32,7 +29,7 @@ import logging
 from typing import Dict, List, Optional, Tuple, Set, Any
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
-from src.utils.config import get_config, setup_logging
+from src.utils.config import get_config, setup_logging, PATHS
 
 logger = logging.getLogger("moodle_scraper")
 
@@ -103,7 +100,7 @@ class CacheManager:
         with open(file_path, 'w', encoding='utf-8') as f:
             f.write(soup.prettify())
             
-        return os.path.join("html_cache", filename) # Store relative to data/
+        return os.path.join("html_cache", filename) # Path hint for map
 
 
 class MoodleCrawler:
@@ -111,7 +108,6 @@ class MoodleCrawler:
 
     def __init__(self, start_url: str, max_depth: int = 3, max_nodes: int = 100):
         config = get_config()
-        self.paths = config['paths']
         self.start_url = UrlManager.canonicalize(start_url)
         self.base_netloc = urlparse(self.start_url).netloc
         self.max_depth = max_depth
@@ -119,8 +115,9 @@ class MoodleCrawler:
         
         if "moodle_url" not in config:
             raise KeyError("Missing required 'moodle_url' in config/config.json")
-        self.cache = CacheManager(self.paths['html_cache_dir'], config['moodle_url'])
-        self.output_file = self.paths['moodle_map_file']
+            
+        self.cache = CacheManager(PATHS['html_cache_dir'], config['moodle_url'])
+        self.output_file = PATHS['moodle_map_file']
         
         self.root_node = None
         self.visited: Dict[str, Dict] = {}

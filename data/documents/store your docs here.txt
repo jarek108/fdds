@@ -1,1 +1,0 @@
-Place your PDF documents and scenarios in this directory (or its subdirectories) to be processed by the trace generator.

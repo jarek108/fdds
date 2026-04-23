@@ -9,15 +9,15 @@ import time
 
 # Add project root to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
-from src.utils.gemini_cli_headless import run_gemini_cli_headless
-from src.utils.config import get_config, setup_logging
+from src.utils.gemini_client import run_gemini_cli_headless
+from src.utils.config import get_config, setup_logging, PATHS
 from src.utils.hashes import get_or_create_hash_file
-from src.utils.calc_stats import calculate_cost
+from src.utils.calc_stats import calculate_cost, parse_session_stats
 
 logger = logging.getLogger("doc_tracing")
 
 def process_single_document(pdf_path: str, trace_dir: str, model_id: str, max_tokens: int, force_regeneration: bool) -> Dict[str, Any]:
-    """Extracts summary/trace from a single PDF and saves it as <hash>.json using strict JSON output."""
+    """Extracts summary/trace from a single PDF and saves it as <hash>.json using Gemini CLI."""
     try:
         # 1. Get/Calculate Hash
         file_hash = get_or_create_hash_file(pdf_path)
@@ -32,100 +32,65 @@ def process_single_document(pdf_path: str, trace_dir: str, model_id: str, max_to
 
         print(f"ANALYZING: {os.path.basename(pdf_path)}...", flush=True)
         
+        system_instruction = "You are a specialized Knowledge Extraction Engine. Your task is to analyze the provided PDF and return a clean JSON summary in Polish. DO NOT include any conversational text or markdown blocks."
+        
         prompt = f"""
-Przeanalizuj dołączony dokument PDF i przygotuj jego 'ślad' (trace) dla bazy wiedzy.
-Twoim celem jest wyciągnięcie esencji wiedzy w formie skondensowanej, ale bardzo konkretnej.
-
-WYMAGANIA MERYTORYCZNE:
-1. JĘZYK: Odpowiadaj wyłącznie w języku polskim.
-2. TREŚĆ: Skup się na faktach, liczbach, wytycznych, procedurach i kluczowych przesłaniach. Jeśli dokument wspomina o innych programach FDDS, numerach telefonów (116 111, 800 100 100) lub stronach www, koniecznie je uwzględnij.
-3. LIMIT: Twoja odpowiedź powinna mieć około {max_tokens} tokenów (bądź zwięzły, ale merytoryczny).
-
-WYMAGANIA FORMATOWANIA (KRYTYCZNE):
-Musisz odpowiedzieć WYŁĄCZNIE poprawnym obiektem JSON. Nie używaj znaczników formatowania Markdown (takich jak ```json). Nie dodawaj absolutnie żadnych wstępów, podsumowań ani komentarzy przed lub po obiekcie JSON.
-
-Zwróć dokładnie taką strukturę:
+Return a JSON object containing:
 {{
-  "tytul": "Tutaj wpisz DOKŁADNY, oficjalny tytuł dokumentu. Absolutny zakaz dodawania własnych słów czy komentarzy. WAŻNE: Tytuł nie może być w całości pisany WIELKIMI LITERAMI (używaj standardowej pisowni, np. tylko pierwsza litera wielka).",
-  "tresc": "Tutaj wpisz treść merytoryczną sformatowaną za pomocą znaków nowej linii (\\n) i podstawowych wypunktowań."
+  "tytul": "Exact title of the document",
+  "tresc": "Detailed summary focusing on facts, numbers, and procedures (approx {max_tokens} tokens). 
+           CRITICAL: You MUST include any phone numbers mentioned in the text (especially 800 100 100 or 116 111) as they are vital for intervention."
 }}
 """
         
-        max_retries = 3
-        cost = 0.0
-        s = {}
+        # 3. Use gemini-cli-headless wrapper
+        session = run_gemini_cli_headless(
+            prompt=prompt,
+            model_id=model_id,
+            files=[pdf_path],
+            system_instruction=system_instruction,
+            extra_args=["-o", "json"]
+        )
         
-        for attempt in range(max_retries):
-            session = run_gemini_cli_headless(
-                prompt=prompt,
-                model_id=model_id,
-                files=[pdf_path],
-                allowed_tools=[]
-            )
-            
-            # Accumulate stats across retries
-            s_current = session.stats
-            cost += calculate_cost(
-                model_id, 
-                s_current.get("inputTokens", 0), 
-                s_current.get("outputTokens", 0) + s_current.get("thoughtTokens", 0), 
-                s_current.get("cachedTokens", 0)
-            )
-            
-            # Update cumulative stats
-            for k, v in s_current.items():
-                if isinstance(v, (int, float)):
-                    s[k] = s.get(k, 0) + v
-            
-            text = session.text.strip()
-            
-            # Clean up potential markdown formatting that models sometimes stubbornly include
-            if text.startswith('```json'):
-                text = text[7:]
-            elif text.startswith('```'):
-                text = text[3:]
-            if text.endswith('```'):
-                text = text[:-3]
-            text = text.strip()
-            
-            try:
-                parsed_data = json.loads(text)
-                title = parsed_data.get("tytul", "").strip()
-                content = parsed_data.get("tresc", "").strip()
-                
-                # Validation
-                if not title or not content:
-                    raise ValueError("Missing 'tytul' or 'tresc' in JSON.")
-                
-                if len(title) > 200 or "Poniżej przedstawiam" in title or "Zgodnie z" in title:
-                    raise ValueError(f"Title seems polluted with conversational noise (length: {len(title)}).")
-                
-                # If we get here, the JSON is valid and clean
-                trace_data = {
-                    "source_hash": file_hash,
-                    "original_filename": os.path.basename(pdf_path),
-                    "tytul": title,
-                    "zawartosc": content,
-                    "stats": s,
-                    "cost": cost,
-                    "model": model_id,
-                    "timestamp": session.raw_data.get("timestamp", time.strftime("%Y-%m-%dT%H:%M:%SZ"))
-                }
+        text = session.text.strip()
+        
+        # Clean up markdown if present
+        if text.startswith("```json"): text = text[7:]
+        if text.startswith("```"): text = text[3:]
+        if text.endswith("```"): text = text[:-3]
+        text = text.strip()
 
-                with open(trace_path, 'w', encoding='utf-8') as f:
-                    json.dump(trace_data, f, indent=2, ensure_ascii=False)
-                    
-                return {"source": pdf_path, "status": "success", "cost": cost, "hash": file_hash}
-                
-            except (json.JSONDecodeError, ValueError) as e:
-                if attempt < max_retries - 1:
-                    logger.warning(f"Retry {attempt + 1}/{max_retries} for {os.path.basename(pdf_path)} due to: {e}")
-                    # Modify prompt slightly to strongly enforce the rule on retry
-                    prompt += "\nOSTATNIA ODPOWIEDŹ BYŁA BŁĘDNA. MUSISZ ZWRÓCIĆ TYLKO I WYŁĄCZNIE CZYSTY JSON. ŻADNEGO TEKSTU POZA KLAMRAMI { }."
-                else:
-                    logger.error(f"Failed to process {pdf_path} after {max_retries} attempts. Last error: {e}")
-                    return {"source": pdf_path, "status": "error", "message": f"Validation failed: {str(e)}"}
-                    
+        # Robust JSON extraction
+        import re
+        json_match = re.search(r'\{.*\}', text, re.DOTALL)
+        if json_match:
+            text = json_match.group(0)
+
+        parsed_data = json.loads(text)
+        title = parsed_data.get("tytul", "").strip()
+        content = parsed_data.get("tresc", "").strip()
+        
+        if not title or not content:
+            raise ValueError("Missing 'tytul' or 'tresc' in JSON.")
+
+        # Success!
+        s = parse_session_stats(session.stats, model_id)
+        trace_data = {
+            "source_hash": file_hash,
+            "original_filename": os.path.basename(pdf_path),
+            "tytul": title,
+            "zawartosc": content,
+            "stats": s,
+            "cost": calculate_cost(model_id, s.get("input", 0), s.get("output", 0)),
+            "model": model_id,
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ")
+        }
+
+        with open(trace_path, 'w', encoding='utf-8') as f:
+            json.dump(trace_data, f, indent=2, ensure_ascii=False)
+            
+        return {"source": pdf_path, "status": "success", "cost": trace_data["cost"], "hash": file_hash}
+
     except Exception as e:
         logger.error(f"Critical error processing {pdf_path}: {e}")
         return {"source": pdf_path, "status": "error", "message": str(e)}
@@ -138,9 +103,10 @@ def create_document_traces(docs_dir: str, max_docs: int = None, max_cost: float 
     if max_tokens is None:
         max_tokens = config.get("trace_length", 200)
     
-    trace_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../', config['paths']['traces_dir']))
-    trace_job_dir = os.path.join(trace_root, f"{max_tokens}_{model_id}")
+    trace_root = PATHS['traces_dir']
+    trace_job_dir = os.path.normpath(os.path.join(trace_root, f"{max_tokens}_{model_id}"))
     os.makedirs(trace_job_dir, exist_ok=True)
+    print(f"DEBUG: Writing traces to: {trace_job_dir}", flush=True)
 
     print(f"STEP 1/2: Scanning documents...", flush=True)
 
@@ -197,7 +163,7 @@ def create_document_traces(docs_dir: str, max_docs: int = None, max_cost: float 
 if __name__ == "__main__":
     setup_logging()
     parser = argparse.ArgumentParser(description="Extract structured knowledge from PDFs using Gemini CLI.")
-    parser.add_argument("--dir", default="data/documents", help="Directory containing PDF documents.")
+    parser.add_argument("--dir", default=PATHS['documents_dir'], help="Directory containing PDF documents.")
     parser.add_argument("--max-docs", type=int, help="Maximum number of documents to process.")
     parser.add_argument("--max-cost", type=float, help="Stop if total cost exceeds this USD amount.")
     parser.add_argument("--max-tokens", type=int, help="Target token count for each trace summary.")

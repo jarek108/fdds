@@ -43,6 +43,9 @@ While traditional SDKs (`google-genai`) or end-user tools like NotebookLM are po
 2. **Overcoming NotebookLM's Limitations:** NotebookLM is an excellent SaaS tool, but it imposes a hard limit of 200 source documents per notebook. By building a custom pipeline with Gemini CLI, we can compile an unlimited number of documents into a single, highly dense Master Session.
 3. **Granular Control & Automation:** Unlike closed SaaS platforms, the CLI acts as a programmable layer. It inherently supports autonomous execution (`--yolo`), built-in JSON parsing (`-o json`), and instant context caching (via file-based session cloning with `-r`), allowing us to build the complex "Master Session" architecture, the Correction Layer, and custom link post-processing that wouldn't be possible otherwise.
 
+## 🧪 Testing Strategy
+A comprehensive End-to-End (E2E) testing strategy is defined in [QAR.md](QAR.md). This strategy details approximately 40 robust test cases covering everything from Document Lifecycle and Knowledge Base hotfixing to Multi-tenant isolation and Quota enforcement using live LLM models in sandboxed environments.
+
 ---
 
 ## 🚀 Getting Started
@@ -121,7 +124,7 @@ python src/start_server.py
     ├── create_document_traces.py     # Processes raw PDFs to extract insights into JSON traces.
     ├── start_server.py               # Hosts the Web UI, API endpoints, and manages session cloning.
     └── utils/                        # Shared helper modules (CLI wrappers, config, stats).
-        ├── gemini_cli_headless.py    # Standalone programmatic wrapper for Gemini CLI.
+        ├── gemini_headless_adapter.py # Thin adapter for the gemini-cli-headless PyPI package.
         ├── calc_stats.py             # Calculates LLM token usage and estimated API costs.
         ├── config.py                 # Centralized configuration loader and logging setup.
         └── ...                       # Additional temporary inspection and mapping utilities.

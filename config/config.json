@@ -3,14 +3,6 @@
   "doc_tracing_model": "gemini-3-flash-preview",
   "answer_model": "gemini-3-flash-preview",
   "answer_model2": "gemini-3.1-flash-lite-preview",
-  "paths": {
-    "documents_dir": "data/documents",
-    "traces_dir": "data/traces",
-    "sessions_dir": "data/sessions",
-    "html_cache_dir": "data/html_cache",
-    "moodle_map_file": "data/moodle_map.json",
-    "master_session_file": "data/master_session.json"
-  },
   "base_url_prefix": "/documents/",
   "moodle_url": "https://edukacja.fdds.pl",
   "audio_recording_timeout_s": 30,
