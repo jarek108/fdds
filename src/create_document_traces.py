@@ -1,26 +1,30 @@
 import os
+import sys
+
+# Add project root to sys.path immediately to ensure 'src' package is found
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 import json
 import logging
 import argparse
-import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Any
 import time
 from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv(os.path.join(os.path.dirname(__file__), '../config/.env'))
+# Load environment variables from the correct path relative to this script
+load_dotenv(os.path.join(project_root, 'config/.env'))
 
 # --- FAIL FAST: API Key Check ---
 if not os.environ.get("GEMINI_API_KEY"):
     print("FATAL: GEMINI_API_KEY environment variable is not set.")
     sys.exit(1)
 
-# Add project root to sys.path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
 from gemini_cli_headless import run_gemini_cli_headless
-
 from src.utils.config import get_config, setup_logging, PATHS
+
 from src.utils.hashes import get_or_create_hash_file
 from src.utils.calc_stats import calculate_cost, parse_session_stats
 
@@ -40,7 +44,10 @@ def process_single_document(pdf_path: str, trace_dir: str, model_id: str, max_to
         if os.path.exists(trace_path) and not force_regeneration:
             return {"source": pdf_path, "status": "skipped", "hash": file_hash}
 
-        print(f"ANALYZING: {os.path.basename(pdf_path)}...", flush=True)
+        try:
+            print(f"ANALYZING: {os.path.basename(pdf_path)}...", flush=True)
+        except UnicodeEncodeError:
+            pass
         
         system_instruction = "You are a specialized Knowledge Extraction Engine. Your task is to analyze the provided PDF and return a clean JSON summary in Polish. DO NOT include any conversational text or markdown blocks."
         
@@ -61,8 +68,7 @@ Return a JSON object containing:
             system_instruction_override=system_instruction,
             stream_output=False,
             allowed_tools=[],
-            isolate_from_hierarchical_pollution=True,
-            extra_args=["-o", "json"]
+            isolate_from_hierarchical_pollution=True
         )
         
         text = session.text.strip()
@@ -79,6 +85,11 @@ Return a JSON object containing:
         if json_match:
             text = json_match.group(0)
 
+        # FIX FOR WINDOWS ENCODING CORRUPTION:
+        # Sometimes the JSON contains mojibake or replacement characters like  
+        # from the subprocess stdout buffer misinterpreting UTF-8 as CP1252.
+        # We need to strictly parse it. If it fails, the error will be caught 
+        # and logged correctly below.
         parsed_data = json.loads(text)
         title = parsed_data.get("tytul", "").strip()
         content = parsed_data.get("tresc", "").strip()
@@ -154,13 +165,22 @@ def create_document_traces(docs_dir: str, max_docs: int = None, max_cost: float 
             if result["status"] == "success":
                 processed_count += 1
                 total_cost += result.get("cost", 0)
-                print(f"[{i}/{total_files}] DONE: {filename}", flush=True)
+                try:
+                    print(f"[{i}/{total_files}] DONE: {filename}", flush=True)
+                except UnicodeEncodeError:
+                    print(f"[{i}/{total_files}] DONE: {filename.encode('ascii', 'replace').decode('ascii')}", flush=True)
             elif result["status"] == "skipped":
                 skipped_count += 1
-                print(f"[{i}/{total_files}] SKIP: {filename} (already traced)", flush=True)
-            else:
-                error_count += 1
-                print(f"[{i}/{total_files}] ERROR: {filename} - {result.get('message')}", flush=True)
+                try:
+                    print(f"[{i}/{total_files}] SKIP: {filename} (already traced)", flush=True)
+                except UnicodeEncodeError:
+                    print(f"[{i}/{total_files}] SKIP: {filename.encode('ascii', 'replace').decode('ascii')} (already traced)", flush=True)
+                else:
+                    error_count += 1
+                    try:
+                        print(f"[{i}/{total_files}] ERROR: {filename} - {result.get('message')}", flush=True)
+                    except UnicodeEncodeError:
+                        print(f"[{i}/{total_files}] ERROR: {filename.encode('ascii', 'replace').decode('ascii')} - {str(result.get('message')).encode('ascii', 'replace').decode('ascii')}", flush=True)
             
             if max_cost and total_cost >= max_cost:
                 print(f"!!! Cost limit reached ({total_cost:.2f} USD). Stopping.", flush=True)
