@@ -4,6 +4,7 @@ import logging
 import subprocess
 import sys
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 from src.utils.config import get_config, PATHS
 from src.services.storage import storage
@@ -22,7 +23,7 @@ async def get_public_config():
         "audio_recording_timeout_s": config.get("audio_recording_timeout_s", 30)
     }
 
-@router.get("/api/correction")
+@router.get("/api/correction", response_class=PlainTextResponse)
 async def get_correction():
     correction_path = PATHS['correction_file']
     if os.path.exists(correction_path):

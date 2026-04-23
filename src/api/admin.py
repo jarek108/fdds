@@ -8,6 +8,7 @@ import subprocess
 import sys
 import threading
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Query
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 from src.utils.config import get_config, PATHS
 from src.services.storage import storage
@@ -261,7 +262,7 @@ async def get_trace_content(relPath: str = Query(...)):
             return json.load(f)
     raise HTTPException(status_code=404, detail="Trace file not found")
 
-@router.get("/sync-log")
+@router.get("/sync-log", response_class=PlainTextResponse)
 async def get_sync_log():
     log_path = os.path.join(PATHS['run_dir'], 'sync.log')
     if os.path.exists(log_path):
