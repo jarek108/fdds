@@ -1,6 +1,7 @@
 import os
 import json
 import pytest
+import shutil
 from unittest.mock import patch
 from tests.integration.utils import run_sync_pipeline
 
@@ -27,6 +28,12 @@ def test_kb_compilation_integrity(mock_trace_run, mock_hash, mock_run, test_work
     # 2. Setup: Add a mock trace AND a matching empty PDF file
     pdf_path = os.path.join(test_workspace["docs"], "test.pdf")
     with open(pdf_path, "w") as f: f.write("empty")
+    
+    # 2.1 Setup: Copy real system instruction to test workspace
+    real_instruction_src = os.path.join(os.path.dirname(__file__), "../../config/system_instruction.md")
+    instruction_dst = test_workspace["paths"]["base_instruction_file"]
+    os.makedirs(os.path.dirname(instruction_dst), exist_ok=True)
+    shutil.copy2(real_instruction_src, instruction_dst)
     
     mock_hash.return_value = "abc123hash"
 
@@ -56,5 +63,14 @@ def test_kb_compilation_integrity(mock_trace_run, mock_hash, mock_run, test_work
     # 5. Assert: Master Session (JSON)
     assert mock_run.called
     _, kwargs = mock_run.call_args
-    assert "This is the document content." in kwargs["system_instruction_override"]
+    instruction = kwargs["system_instruction_override"]
+    assert "This is the document content." in instruction
+    
+    # 6. Verify real system instructions are included (Ground Truth check)
+    # Since we are using test_workspace, we need to make sure the real file is available or mocked
+    # Actually, the pipeline uses PATHS['base_instruction_file']. 
+    # In conftest, this is patched to tmp_dir/config/system_instruction.md
+    assert "ZASADA REFERENCJI" in instruction
+    assert "[doc_N]" in instruction
+    assert "ZAKAZ UŻYWANIA TYTUŁÓW I URLI" in instruction
 
