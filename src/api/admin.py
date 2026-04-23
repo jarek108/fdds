@@ -221,7 +221,8 @@ async def trigger_sync(request: AdminAuth):
             with open(log_path, 'a', encoding='utf-8') as log_f:
                 log_f.write("Faza 1: Generowanie trace'ów...\n")
                 log_f.flush()
-                p1 = subprocess.Popen([sys.executable, trace_script], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env, cwd=project_root)
+                # Use encoding='utf-8' for the subprocess output
+                p1 = subprocess.Popen([sys.executable, trace_script], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf-8', env=env, cwd=project_root)
                 for line in p1.stdout: log_f.write(line); log_f.flush()
                 p1.wait()
                 if p1.returncode != 0:
@@ -230,7 +231,8 @@ async def trigger_sync(request: AdminAuth):
 
                 log_f.write("\nFaza 2: Budowanie sesji master...\n")
                 log_f.flush()
-                p2 = subprocess.Popen([sys.executable, master_script], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env, cwd=project_root)
+                # Use encoding='utf-8' for the subprocess output
+                p2 = subprocess.Popen([sys.executable, master_script], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf-8', env=env, cwd=project_root)
                 for line in p2.stdout: log_f.write(line); log_f.flush()
                 p2.wait()
                 if p2.returncode == 0:
