@@ -214,16 +214,35 @@ async def trigger_sync(request: AdminAuth):
             master_script = os.path.join(os.path.dirname(__file__), '../create_master_session.py')
             env = os.environ.copy()
             env["PYTHONIOENCODING"] = "utf-8"
+            # Explicitly set PYTHONPATH to project root to avoid ModuleNotFoundError
+            project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../'))
+            env["PYTHONPATH"] = project_root + os.pathsep + env.get("PYTHONPATH", "")
+
             with open(log_path, 'a', encoding='utf-8') as log_f:
+                log_f.write("Faza 1: Generowanie trace'ów...\n")
+                log_f.flush()
                 p1 = subprocess.Popen([sys.executable, trace_script], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env)
                 for line in p1.stdout: log_f.write(line); log_f.flush()
                 p1.wait()
-                if p1.returncode != 0: return
+                if p1.returncode != 0:
+                    log_f.write(f"\nBŁĄD: Faza 1 zakończona kodem {p1.returncode}\n")
+                    return
+
+                log_f.write("\nFaza 2: Budowanie sesji master...\n")
+                log_f.flush()
                 p2 = subprocess.Popen([sys.executable, master_script], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env)
                 for line in p2.stdout: log_f.write(line); log_f.flush()
                 p2.wait()
-                if p2.returncode == 0: storage.load_doc_index()
-        except Exception as e: logger.error(f"Sync error: {e}")
+                if p2.returncode == 0:
+                    storage.load_doc_index()
+                    log_f.write("\nSynchronizacja zakończona sukcesem.\n")
+                else:
+                    log_f.write(f"\nBŁĄD: Faza 2 zakończona kodem {p2.returncode}\n")
+                log_f.flush()
+        except Exception as e:
+            logger.error(f"Sync error: {e}")
+            with open(log_path, 'a', encoding='utf-8') as log_f:
+                log_f.write(f"\nCRITICAL ERROR: {str(e)}\n")
 
     threading.Thread(target=run_sync, daemon=True).start()
     return {"success": True}

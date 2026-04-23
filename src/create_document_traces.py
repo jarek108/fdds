@@ -16,6 +16,8 @@ if not os.environ.get("GEMINI_API_KEY"):
     print("FATAL: GEMINI_API_KEY environment variable is not set.")
     sys.exit(1)
 
+# Add project root to sys.path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
 from gemini_cli_headless import run_gemini_cli_headless
 
 from src.utils.config import get_config, setup_logging, PATHS
