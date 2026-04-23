@@ -88,14 +88,41 @@ async def ask_question(request: ChatRequest):
             try:
                 api_key = os.environ.get("GEMINI_API_KEY")
                 genai.configure(api_key=api_key)
+                
+                logger.info(f"Uploading audio file for transcription: {audio_path}")
                 uploaded = genai.upload_file(path=audio_path)
-                m = genai.GenerativeModel("gemini-1.5-flash") # Updated to stable model
-                res = m.generate_content(["Transcribe this audio strictly. Return only the text.", uploaded])
+                
+                # Wait for the file to be processed by Google AI
+                # This prevents 'file is not active' errors.
+                for _ in range(10):
+                    file_info = genai.get_file(uploaded.name)
+                    if file_info.state.name == "ACTIVE":
+                        break
+                    if file_info.state.name == "FAILED":
+                        raise RuntimeError("Audio file processing failed on Google side.")
+                    time.sleep(1)
+                
+                m = genai.GenerativeModel("gemini-1.5-flash")
+                res = m.generate_content(["Transcribe this audio strictly. Return only the text in Polish.", uploaded])
                 transcription = res.text.strip()
-                user_query = f"{transcription}\n\n{user_query}" if user_query else transcription
+                
+                if transcription:
+                    logger.info(f"Transcription successful: {transcription[:50]}...")
+                    user_query = f"{transcription}\n\n{user_query}" if user_query else transcription
+                else:
+                    logger.warning("Transcription returned empty text.")
+                
                 genai.delete_file(uploaded.name)
             except Exception as e:
                 logger.error(f"Transcription fail: {e}")
+                if not user_query:
+                    # If we have no text AND transcription failed, we cannot continue
+                    return {
+                        "answer": "Przepraszam, nie udało mi się przetworzyć Twojej wiadomości głosowej. Spróbuj zadać pytanie tekstowo lub nagrać się jeszcze raz.",
+                        "stats": {"duration": "0s", "input": 0, "output": 0, "cost": 0},
+                        "audioUrl": audio_url,
+                        "transcription": None
+                    }
 
         # 3. Headless Question Answering
         start_time = time.time()
