@@ -9,7 +9,7 @@ import warnings
 from fastapi import APIRouter, HTTPException
 from gemini_cli_headless import run_gemini_cli_headless
 from src.utils.config import get_config, PATHS
-from src.utils.calc_stats import parse_session_stats
+from src.utils.calc_stats import parse_session_stats, calculate_cost
 from src.services.storage import storage
 
 with warnings.catch_warnings():
@@ -113,13 +113,23 @@ async def ask_question(request: dict):
         
         final_answer = storage.translate_doc_links(session.text)
         
+        # Calculate cost
+        actual_cost = calculate_cost(
+            model, 
+            s.get("input", 0), 
+            s.get("output", 0), 
+            s.get("cached", 0)
+        )
+
         return {
             "answer": final_answer,
             "stats": {
                 "duration": f"{duration:.1f}s",
                 "input": s.get("input", 0),
                 "output": s.get("output", 0),
-                "cost": 0.0
+                "cached": s.get("cached", 0),
+                "thoughts": s.get("thoughts", 0),
+                "cost": actual_cost
             },
             "audioUrl": audio_url,
             "transcription": transcription

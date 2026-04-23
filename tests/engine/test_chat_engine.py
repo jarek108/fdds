@@ -43,6 +43,16 @@ def test_ask_question_injects_persona(mock_copy, mock_run, test_workspace):
 
     # 4. Assert
     assert response.status_code == 200
+    data = response.json()
+    assert "answer" in data
+    assert "stats" in data
+    stats = data["stats"]
+    assert "input" in stats
+    assert "output" in stats
+    assert "cached" in stats
+    assert "thoughts" in stats
+    assert "cost" in stats
+    
     assert mock_run.called
     _, kwargs = mock_run.call_args
     
