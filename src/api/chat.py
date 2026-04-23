@@ -85,11 +85,17 @@ async def ask_question(request: dict):
         start_time = time.time()
         
         # Load System Instruction (Knowledge Base)
-        kb_path = PATHS['master_knowledge_base']
+        instruction_path = PATHS['master_system_instruction']
         system_instruction = ""
-        if os.path.exists(kb_path):
-            with open(kb_path, 'r', encoding='utf-8') as f:
+        if os.path.exists(instruction_path):
+            with open(instruction_path, 'r', encoding='utf-8') as f:
                 system_instruction = f.read()
+        else:
+            # Fallback to KB if instruction file is missing (e.g. before re-sync)
+            kb_path = PATHS['master_knowledge_base']
+            if os.path.exists(kb_path):
+                with open(kb_path, 'r', encoding='utf-8') as f:
+                    system_instruction = f.read()
 
         session = run_gemini_cli_headless(
             prompt=user_query,

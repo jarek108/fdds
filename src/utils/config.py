@@ -26,6 +26,7 @@ PATHS = {
     "active_setup_dir": os.path.join(ROOT, "data/active_setup"),
     "master_session_file": os.path.join(ROOT, "data/active_setup/master_session.json"),
     "master_knowledge_base": os.path.join(ROOT, "data/active_setup/master_knowledge_base.md"),
+    "master_system_instruction": os.path.join(ROOT, "data/active_setup/master_system_instruction.md"),
     "kb_stats": os.path.join(ROOT, "data/active_setup/kb_stats.json"),
     
     # Cache (Safe to delete, improves performance)
