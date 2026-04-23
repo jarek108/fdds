@@ -27,10 +27,8 @@ def run_gemini_cli_headless(
     # MANDATORY FDDS SECURITY POLICY (Tier-4 Sandbox)
     # 1. We disable tools by default for all answering/summarization tasks
     # 2. we enforce hierarchical isolation to prevent context leakage
-    # 3. We use project_name='fdds' to ensure consistent session directory naming
-    
-    # We ignore allowed_paths because of the upstream static compiler bug
-    # documented in gemini-cli-headless.
+    # We let the library auto-resolve the project_name from the CWD 
+    # to ensure consistency with the underlying CLI.
     
     return _run_original(
         prompt=prompt,
@@ -42,7 +40,6 @@ def run_gemini_cli_headless(
         allowed_tools=allowed_tools if allowed_tools is not None else [],
         stream_output=stream_output,
         api_key=api_key,
-        project_name="fdds",
         isolate_from_hierarchical_pollution=True,
         **kwargs
     )
