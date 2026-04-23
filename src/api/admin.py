@@ -16,16 +16,18 @@ from src.services.storage import storage
 router = APIRouter(prefix="/api/admin")
 logger = logging.getLogger("admin_api")
 
+from typing import Optional
+
 class AdminAuth(BaseModel):
-    password: str = None
+    password: Optional[str] = None
 
 class RelPathRequest(BaseModel):
-    password: str = None
+    password: Optional[str] = None
     relPath: str
 
 class CreateFolderRequest(BaseModel):
-    password: str = None
-    parentPath: str = ""
+    password: Optional[str] = None
+    parentPath: Optional[str] = ""
     folderName: str
 
 def check_admin_auth(password: str):

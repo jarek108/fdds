@@ -12,8 +12,10 @@ from src.services.storage import storage
 router = APIRouter()
 logger = logging.getLogger("config_api")
 
+from typing import Optional
+
 class CorrectionRequest(BaseModel):
-    password: str = None
+    password: Optional[str] = None
     content: str
 
 @router.get("/api/config")
