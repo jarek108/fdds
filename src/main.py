@@ -6,6 +6,8 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse
 from starlette.middleware.cors import CORSMiddleware
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 
 # Add project root to sys.path
@@ -39,6 +41,14 @@ app.add_middleware(
 app.include_router(admin_router)
 app.include_router(chat_router)
 app.include_router(config_router)
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    logging.error(f"Validation error: {exc.errors()} on path {request.url.path}")
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors(), "body": str(exc.body)},
+    )
 
 # --- Static Routes & File Serving ---
 
