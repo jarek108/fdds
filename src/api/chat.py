@@ -20,9 +20,11 @@ with warnings.catch_warnings():
 router = APIRouter()
 logger = logging.getLogger("chat_api")
 
+from typing import Optional
+
 class ChatRequest(BaseModel):
-    question: str = None
-    audio: str = None
+    question: Optional[str] = None
+    audio: Optional[str] = None
     chatId: str
 
 @router.post("/ask")
