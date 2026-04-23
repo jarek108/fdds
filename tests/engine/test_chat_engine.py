@@ -15,18 +15,17 @@ def test_ask_question_injects_persona(mock_copy, mock_run, test_workspace):
     ENGINE TEST: Verifies that the /ask endpoint correctly reads the master system instruction
     and injects it as a system instruction override.
     """
-    # 1. Setup: Create a fake master system instruction
-    kb_content = "# FAKE SYSTEM INSTRUCTION\nThis is the FDDS persona."
-    kb_path = test_workspace["paths"]["master_system_instruction"]
-    os.makedirs(os.path.dirname(kb_path), exist_ok=True)
-    with open(kb_path, "w", encoding="utf-8") as f:
-        f.write(kb_content)
+    # 1. Setup: Create a fake master knowledge base
+    persona_content = "# FAKE SYSTEM INSTRUCTION\nThis is the FDDS persona."
     
-    # Setup mock master session file
+    # Setup mock master session file containing the instruction
     master_session_path = test_workspace["paths"]["master_session_file"]
     os.makedirs(os.path.dirname(master_session_path), exist_ok=True)
     with open(master_session_path, "w", encoding="utf-8") as f:
-        json.dump({"sessionId": "master-id"}, f)
+        json.dump({
+            "sessionId": "master-id",
+            "systemInstruction": persona_content
+        }, f)
 
     # 2. Setup mock response
     from gemini_cli_headless import GeminiSession
@@ -47,7 +46,7 @@ def test_ask_question_injects_persona(mock_copy, mock_run, test_workspace):
     assert mock_run.called
     _, kwargs = mock_run.call_args
     
-    # CRITICAL: Verify the persona is being injected
-    assert kwargs["system_instruction_override"] == kb_content
+    # CRITICAL: Verify the persona is being injected from JSON
+    assert kwargs["system_instruction_override"] == persona_content
     assert kwargs["allowed_tools"] == []
     assert kwargs["isolate_from_hierarchical_pollution"] is True

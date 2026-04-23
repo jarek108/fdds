@@ -49,15 +49,19 @@ async def ask_question(request: dict):
             os.makedirs(os.path.dirname(user_session_file), exist_ok=True)
             
             with open(master_session_file, 'r', encoding='utf-8') as f:
-                master_data = json.load(f)
+                session_data = json.load(f)
             
-            master_data['sessionId'] = gemini_session_id
+            session_data['sessionId'] = gemini_session_id
             with open(user_session_file, 'w', encoding='utf-8') as f:
-                json.dump(master_data, f, indent=2, ensure_ascii=False)
+                json.dump(session_data, f, indent=2, ensure_ascii=False)
             
             with storage.chat_mapping_lock:
                 storage.chat_mapping[chat_id] = gemini_session_id
             storage.save_chat_mapping()
+        else:
+            # Load existing session to get the instruction
+            with open(user_session_file, 'r', encoding='utf-8') as f:
+                session_data = json.load(f)
 
         # 2. Handle Audio Transcription (EXCEPTION: Using google-generativeai SDK)
         audio_url = None
@@ -88,18 +92,8 @@ async def ask_question(request: dict):
         # 3. Headless Question Answering
         start_time = time.time()
         
-        # Load System Instruction (Knowledge Base)
-        instruction_path = PATHS['master_system_instruction']
-        system_instruction = ""
-        if os.path.exists(instruction_path):
-            with open(instruction_path, 'r', encoding='utf-8') as f:
-                system_instruction = f.read()
-        else:
-            # Fallback to KB if instruction file is missing (e.g. before re-sync)
-            kb_path = PATHS['master_knowledge_base']
-            if os.path.exists(kb_path):
-                with open(kb_path, 'r', encoding='utf-8') as f:
-                    system_instruction = f.read()
+        # Get System Instruction from the session data itself
+        system_instruction = session_data.get("systemInstruction", "")
 
         session = run_gemini_cli_headless(
             prompt=user_query,
