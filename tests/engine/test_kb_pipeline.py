@@ -6,7 +6,7 @@ from tests.integration.utils import run_sync_pipeline
 
 @patch("src.create_master_session.run_gemini_cli_headless")
 @patch("src.create_master_session.get_or_create_hash_file")
-@patch("src.create_document_traces.create_document_traces")
+@patch("tests.integration.utils.create_document_traces")
 def test_kb_compilation_integrity(mock_trace_run, mock_hash, mock_run, test_workspace):
     """
     ENGINE TEST: Verifies that the Python pipeline correctly compiles 
@@ -56,5 +56,5 @@ def test_kb_compilation_integrity(mock_trace_run, mock_hash, mock_run, test_work
     # 5. Assert: Master Session (JSON)
     assert mock_run.called
     _, kwargs = mock_run.call_args
-    assert "This is the document content." in kwargs["system_instruction"]
+    assert "This is the document content." in kwargs["system_instruction_override"]
 

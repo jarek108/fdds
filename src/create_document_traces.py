@@ -6,10 +6,18 @@ import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Any
 import time
+from dotenv import load_dotenv
 
-# Add project root to sys.path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
-from src.utils.gemini_client import run_gemini_cli_headless
+# Load environment variables
+load_dotenv(os.path.join(os.path.dirname(__file__), '../config/.env'))
+
+# --- FAIL FAST: API Key Check ---
+if not os.environ.get("GEMINI_API_KEY"):
+    print("FATAL: GEMINI_API_KEY environment variable is not set.")
+    sys.exit(1)
+
+from gemini_cli_headless import run_gemini_cli_headless
+
 from src.utils.config import get_config, setup_logging, PATHS
 from src.utils.hashes import get_or_create_hash_file
 from src.utils.calc_stats import calculate_cost, parse_session_stats
@@ -43,12 +51,15 @@ Return a JSON object containing:
 }}
 """
         
-        # 3. Use gemini-cli-headless wrapper
+        # 3. Use gemini-cli-headless library directly
         session = run_gemini_cli_headless(
             prompt=prompt,
             model_id=model_id,
             files=[pdf_path],
-            system_instruction=system_instruction,
+            system_instruction_override=system_instruction,
+            stream_output=False,
+            allowed_tools=[],
+            isolate_from_hierarchical_pollution=True,
             extra_args=["-o", "json"]
         )
         

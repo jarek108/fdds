@@ -5,7 +5,7 @@ from unittest.mock import patch
 from tests.integration.utils import run_sync_pipeline
 
 @patch("src.create_master_session.run_gemini_cli_headless")
-@patch("src.create_document_traces.create_document_traces")
+@patch("tests.integration.utils.create_document_traces")
 def test_correction_injection_engine(mock_trace, mock_run, test_workspace):
     """
     ENGINE TEST: Verifies that correction.txt is physically injected into the 
@@ -28,5 +28,5 @@ def test_correction_injection_engine(mock_trace, mock_run, test_workspace):
     # 3. Assert: Verify the instruction sent to Gemini
     assert mock_run.called
     _, kwargs = mock_run.call_args
-    instruction = kwargs["system_instruction"]
+    instruction = kwargs["system_instruction_override"]
     assert "HOTFIX: Use number 555-555." in instruction

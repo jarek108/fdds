@@ -6,7 +6,7 @@ import time
 import base64
 import shutil
 from fastapi import APIRouter, HTTPException
-from src.utils.gemini_client import run_gemini_cli_headless
+from gemini_cli_headless import run_gemini_cli_headless
 from src.utils.config import get_config, PATHS
 from src.utils.calc_stats import parse_session_stats
 from src.services.storage import storage
@@ -70,8 +70,6 @@ async def ask_question(request: dict):
             audio_url = f"/audio/{audio_filename}?chatId={chat_id}"
             
             try:
-                api_key = os.environ.get("GEMINI_API_KEY")
-                genai.configure(api_key=api_key)
                 uploaded = genai.upload_file(path=audio_path)
                 m = genai.GenerativeModel("gemini-1.5-flash") # Updated to stable model
                 res = m.generate_content(["Transcribe this audio strictly. Return only the text.", uploaded])
@@ -87,7 +85,9 @@ async def ask_question(request: dict):
             prompt=user_query,
             model_id=model,
             session_to_resume=user_session_file,
-            stream_output=False
+            stream_output=False,
+            allowed_tools=[],
+            isolate_from_hierarchical_pollution=True
         )
         
         # Persist session

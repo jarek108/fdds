@@ -10,10 +10,19 @@ import hashlib
 import tempfile
 import uuid
 from typing import List, Dict, Any
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv(os.path.join(os.path.dirname(__file__), '../config/.env'))
+
+# --- FAIL FAST: API Key Check ---
+if not os.environ.get("GEMINI_API_KEY"):
+    print("FATAL: GEMINI_API_KEY environment variable is not set.")
+    sys.exit(1)
 
 # Add project root to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
-from src.utils.gemini_client import run_gemini_cli_headless
+from gemini_cli_headless import run_gemini_cli_headless
 from src.utils.config import get_config, setup_logging, PATHS
 from src.utils.hashes import get_or_create_hash_file
 from src.utils.calc_stats import parse_session_stats
@@ -168,9 +177,10 @@ def create_master_session(trace_dir: str = None, docs_dir: str = None):
     session = run_gemini_cli_headless(
         prompt="OK",
         model_id=config["answer_model"],
-        system_instruction="".join(llm_kb_parts),
+        system_instruction_override="".join(llm_kb_parts),
         allowed_tools=[],
         stream_output=True,
+        isolate_from_hierarchical_pollution=True,
         extra_args=["--admin-policy", policy_path]
     )
     

@@ -25,4 +25,4 @@ The `gemini-cli-headless` wrapper is used because:
 3. **Deterministic Behavior:** It eliminates hierarchical context pollution and "zombie knowledge" through surgical environment isolation.
 
 ---
-*If you need to add a new AI feature, integrate it via `src/utils/gemini_client.py` using the established headless pattern.*
+*If you need to add a new AI feature, integrate it using the established headless pattern with `gemini-cli-headless`.*

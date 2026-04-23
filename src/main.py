@@ -6,9 +6,20 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse
 from starlette.middleware.cors import CORSMiddleware
+from dotenv import load_dotenv
 
 # Add project root to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
+
+# Load environment variables once at boot
+load_dotenv(os.path.join(os.path.dirname(__file__), '../config/.env'))
+
+# --- FAIL FAST: API Key Check ---
+if not os.environ.get("GEMINI_API_KEY"):
+    print("FATAL: GEMINI_API_KEY environment variable is not set.")
+    print("Please set it in your environment before starting the server.")
+    sys.exit(1)
+
 from src.utils.config import setup_logging, PATHS, get_config
 from src.api.admin import router as admin_router
 from src.api.chat import router as chat_router

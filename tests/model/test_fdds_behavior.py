@@ -1,6 +1,6 @@
 import os
 import pytest
-from src.utils.gemini_client import run_gemini_cli_headless
+from gemini_cli_headless import run_gemini_cli_headless
 from tests.integration.utils import run_sync_pipeline
 
 @pytest.mark.model
@@ -18,8 +18,10 @@ def test_model_knowledge_recall(test_workspace, mock_env):
     response = run_gemini_cli_headless(
         prompt="Kiedy lata niebieski ptak?",
         model_id=test_workspace["config"]["answer_model"],
-        system_instruction=system_instruction,
-        api_key=mock_env
+        system_instruction_override=system_instruction,
+        api_key=mock_env,
+        allowed_tools=[],
+        isolate_from_hierarchical_pollution=True
     )
     assert "północy" in response.text.lower()
 
@@ -38,7 +40,9 @@ def test_model_citation_behavior(test_workspace, mock_env):
     response = run_gemini_cli_headless(
         prompt="Jaka jest stolica Polski? Podaj źródło.",
         model_id=test_workspace["config"]["answer_model"],
-        system_instruction=system_instruction,
-        api_key=mock_env
+        system_instruction_override=system_instruction,
+        api_key=mock_env,
+        allowed_tools=[],
+        isolate_from_hierarchical_pollution=True
     )
     assert "[doc_1]" in response.text
