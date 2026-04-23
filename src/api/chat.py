@@ -7,6 +7,7 @@ import base64
 import shutil
 import warnings
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 from gemini_cli_headless import run_gemini_cli_headless
 from src.utils.config import get_config, PATHS
 from src.utils.calc_stats import parse_session_stats, calculate_cost
@@ -19,12 +20,17 @@ with warnings.catch_warnings():
 router = APIRouter()
 logger = logging.getLogger("chat_api")
 
+class ChatRequest(BaseModel):
+    question: str = None
+    audio: str = None
+    chatId: str
+
 @router.post("/ask")
-async def ask_question(request: dict):
+async def ask_question(request: ChatRequest):
     try:
-        user_query = request.get('question')
-        audio_base64 = request.get('audio')
-        chat_id = request.get('chatId')
+        user_query = request.question
+        audio_base64 = request.audio
+        chat_id = request.chatId
         
         if not user_query and not audio_base64:
             raise HTTPException(status_code=400, detail="Missing input")

@@ -4,11 +4,16 @@ import logging
 import subprocess
 import sys
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 from src.utils.config import get_config, PATHS
 from src.services.storage import storage
 
 router = APIRouter()
 logger = logging.getLogger("config_api")
+
+class CorrectionRequest(BaseModel):
+    password: str = None
+    content: str
 
 @router.get("/api/config")
 async def get_public_config():
@@ -26,14 +31,14 @@ async def get_correction():
     return ""
 
 @router.post("/api/correction")
-async def update_correction(request: dict):
+async def update_correction(request: CorrectionRequest):
     # Check auth
     config = get_config()
     expected_password = config.get('correction_password')
-    if expected_password and request.get('password') != expected_password:
+    if expected_password and request.password != expected_password:
         raise HTTPException(status_code=401, detail="Nieprawidłowe hasło.")
     
-    content = request.get('content', '')
+    content = request.content
     correction_path = PATHS['correction_file']
     os.makedirs(os.path.dirname(correction_path), exist_ok=True)
     with open(correction_path, 'w', encoding='utf-8') as f:

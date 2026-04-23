@@ -18,6 +18,15 @@ logger = logging.getLogger("admin_api")
 class AdminAuth(BaseModel):
     password: str = None
 
+class RelPathRequest(BaseModel):
+    password: str = None
+    relPath: str
+
+class CreateFolderRequest(BaseModel):
+    password: str = None
+    parentPath: str = ""
+    folderName: str
+
 def check_admin_auth(password: str):
     config = get_config()
     expected_password = config.get('correction_password')
@@ -141,9 +150,9 @@ async def get_documents():
     return build_doc_tree(documents_root, documents_root, show_hidden=True, trace_dir=trace_dir)
 
 @router.post("/remove")
-async def remove_item(request: dict):
-    check_admin_auth(request.get('password'))
-    rel_path = request.get('relPath')
+async def remove_item(request: RelPathRequest):
+    check_admin_auth(request.password)
+    rel_path = request.relPath
     target_path = os.path.abspath(os.path.join(PATHS['documents_dir'], rel_path.replace('/', os.sep)))
     if not target_path.startswith(os.path.abspath(PATHS['documents_dir'])):
         raise HTTPException(status_code=403, detail="Invalid path")
@@ -156,9 +165,9 @@ async def remove_item(request: dict):
     raise HTTPException(status_code=404, detail="Not found")
 
 @router.post("/toggle-visibility")
-async def toggle_visibility(request: dict):
-    check_admin_auth(request.get('password'))
-    rel_path = request.get('relPath')
+async def toggle_visibility(request: RelPathRequest):
+    check_admin_auth(request.password)
+    rel_path = request.relPath
     target_path = os.path.abspath(os.path.join(PATHS['documents_dir'], rel_path.replace('/', os.sep)))
     if not target_path.startswith(os.path.abspath(PATHS['documents_dir'])):
         raise HTTPException(status_code=403, detail="Invalid path")
@@ -169,10 +178,10 @@ async def toggle_visibility(request: dict):
     raise HTTPException(status_code=404, detail="Not found")
 
 @router.post("/create-folder")
-async def create_folder(request: dict):
-    check_admin_auth(request.get('password'))
-    parent_rel_path = request.get('parentPath', '')
-    folder_name = request.get('folderName')
+async def create_folder(request: CreateFolderRequest):
+    check_admin_auth(request.password)
+    parent_rel_path = request.parentPath
+    folder_name = request.folderName
     target_dir = os.path.abspath(os.path.join(PATHS['documents_dir'], parent_rel_path.replace('/', os.sep), folder_name))
     if not target_dir.startswith(os.path.abspath(PATHS['documents_dir'])):
         raise HTTPException(status_code=403, detail="Invalid path")
@@ -192,8 +201,8 @@ async def upload_file(password: str = Form(...), parentPath: str = Form(""), fil
     return {"success": True}
 
 @router.post("/sync")
-async def trigger_sync(request: dict):
-    check_admin_auth(request.get('password'))
+async def trigger_sync(request: AdminAuth):
+    check_admin_auth(request.password)
     log_path = os.path.join(PATHS['run_dir'], 'sync.log')
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
     with open(log_path, 'w', encoding='utf-8') as f:
