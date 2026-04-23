@@ -52,11 +52,21 @@ def process_single_document(pdf_path: str, trace_dir: str, model_id: str, max_to
         system_instruction = "You are a specialized Knowledge Extraction Engine. Your task is to analyze the provided PDF and return a clean JSON summary in Polish. DO NOT include any conversational text or markdown blocks."
         
         prompt = f"""
-Return a JSON object containing:
+Przeanalizuj dołączony dokument PDF i przygotuj jego 'ślad' (trace) dla bazy wiedzy.
+Twoim celem jest wyciągnięcie esencji wiedzy w formie skondensowanej, ale bardzo konkretnej.
+
+WYMAGANIA MERYTORYCZNE:
+1. JĘZYK: Odpowiadaj wyłącznie w języku polskim.
+2. TREŚĆ: Skup się na faktach, liczbach, wytycznych, procedurach i kluczowych przesłaniach. Jeśli dokument wspomina o innych programach FDDS, numerach telefonów (116 111, 800 100 100) lub stronach www, koniecznie je uwzględnij.
+3. LIMIT: Twoja odpowiedź powinna mieć około {max_tokens} tokenów (bądź zwięzły, ale merytoryczny).
+
+WYMAGANIA FORMATOWANIA (KRYTYCZNE):
+Musisz odpowiedzieć WYŁĄCZNIE poprawnym obiektem JSON. Nie używaj znaczników formatowania Markdown (takich jak ```json). Nie dodawaj absolutnie żadnych wstępów, podsumowań ani komentarzy przed lub po obiekcie JSON.
+
+Zwróć dokładnie taką strukturę:
 {{
-  "tytul": "Exact title of the document",
-  "tresc": "Detailed summary focusing on facts, numbers, and procedures (approx {max_tokens} tokens). 
-           CRITICAL: You MUST include any phone numbers mentioned in the text (especially 800 100 100 or 116 111) as they are vital for intervention."
+  "tytul": "Tutaj wpisz DOKŁADNY, oficjalny tytuł dokumentu. Absolutny zakaz dodawania własnych słów czy komentarzy. WAŻNE: Tytuł nie może być w całości pisany WIELKIMI LITERAMI (używaj standardowej pisowni, np. tylko pierwsza litera wielka).",
+  "tresc": "Tutaj wpisz treść merytoryczną sformatowaną za pomocą znaków nowej linii (\\n) i podstawowych wypunktowań."
 }}
 """
         
