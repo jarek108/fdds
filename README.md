@@ -27,24 +27,26 @@ Located in `src/`. The caching layer orchestrates the knowledge extraction pipel
 * **Master Session Initialization:** The final compiled knowledge base is injected into the LLM context to establish the cached master session (`master_session.json`). To prevent hallucinated titles, the LLM is instructed to only return raw references like `[doc_1]`.
 
 ### 3. API & Web UI Serving
-Located in `src/`. A concurrent, multi-threaded Python HTTP server handles:
-* **Chat Endpoints (`/ask`):** Clones sessions for isolated multi-user chatting. Post-processes LLM responses to safely translate raw `[doc_1]` references into full, clickable Markdown URLs (`[Real Title](URL)`) using the master index.
-* **Admin Panel (`/admin`):** A comprehensive web UI for managing the knowledge base. It allows administrators to upload PDFs, create folders, hide/delete documents, and trigger a one-click synchronization (`Sync KB`) that automatically handles trace generation and master session compilation in the background. It features a real-time KB synchronization status indicator based on content fingerprints.
+Located in `src/`. A modern, high-performance **FastAPI** server handles:
+* **Chat Endpoints (`/api/chat/ask`):** Clones sessions for isolated multi-user chatting. Post-processes LLM responses to safely translate raw `[doc_1]` references into full, clickable Markdown URLs (`[Real Title](URL)`) using the master index. Includes audio transcription capabilities.
+* **Admin Panel (`/admin`):** A comprehensive web UI for managing the knowledge base. It allows administrators to upload PDFs, create folders, hide/delete documents, and trigger a one-click synchronization (`Sync KB`) that automatically handles trace generation and master session compilation in the background.
 * **Live Corrections (`/correction`):** A dedicated UI to edit global, high-priority knowledge overrides (`data/correction.txt`). Saving updates automatically triggers a background rebuild of the Master Session.
-* **Static Assets:** Securely serves local static assets, audio files, and PDF materials.
+* **Static Assets:** Securely serves local static assets, audio files, and PDF materials via FastAPI static routes.
 
 ---
 
 ## 🛠️ Why Gemini CLI as the Engine?
 
-While traditional SDKs (`google-genai`) or end-user tools like NotebookLM are popular, **Gemini CLI** was chosen as the core engine for this specific project due to several critical advantages:
+This project operates under a strict "Pure Headless Engine" mandate. External SDKs (like `google-genai`) are generally prohibited (see `agents.md`). **Gemini CLI** was chosen as the core engine for this specific project due to several critical advantages:
 
-1. **Handling Sensitive Educational Contexts:** The educational materials from FDDS deal extensively with sensitive and heavy topics, such as child abuse prevention, violence, and suicide prevention. While standard SDKs and cloud APIs often trigger overly aggressive, unconfigurable safety filters (false-positive blocks) on legitimate educational materials, Gemini CLI provides better out-of-the-box tuning for these contexts. This allows the AI to process vital educational documents without being continuously censored, while still strictly adhering to Google's safety policies and Terms of Service (we are not bypassing or disabling required safety guardrails, but rather utilizing an interface optimized for complex context).
-2. **Overcoming NotebookLM's Limitations:** NotebookLM is an excellent SaaS tool, but it imposes a hard limit of 200 source documents per notebook. By building a custom pipeline with Gemini CLI, we can compile an unlimited number of documents into a single, highly dense Master Session.
-3. **Granular Control & Automation:** Unlike closed SaaS platforms, the CLI acts as a programmable layer. It inherently supports autonomous execution (`--yolo`), built-in JSON parsing (`-o json`), and instant context caching (via file-based session cloning with `-r`), allowing us to build the complex "Master Session" architecture, the Correction Layer, and custom link post-processing that wouldn't be possible otherwise.
+1. **Handling Sensitive Educational Contexts:** The educational materials from FDDS deal extensively with sensitive and heavy topics, such as child abuse prevention, violence, and suicide prevention. Standard SDKs trigger overly aggressive, unconfigurable safety filters (false-positive blocks) on legitimate educational materials. The headless CLI provides a resilient environment that respects complex contexts without being continuously censored.
+2. **Zero-Trust Sandboxing (Tier-4):** The `gemini-cli-headless` wrapper (v5.x) creates a true zero-trust environment by physically stripping unauthorized tools (`allowed_tools=[]`) from the model's schema, guaranteeing that answering agents cannot access the server's filesystem.
+3. **Session Cloning (Warm Start):** It inherently supports instant context caching via file-based session cloning (`-r`), allowing us to build the complex "Master Session" architecture.
 
 ## 🧪 Testing Strategy
-A comprehensive End-to-End (E2E) testing strategy is defined in [QAR.md](QAR.md). This strategy details approximately 40 robust test cases covering everything from Document Lifecycle and Knowledge Base hotfixing to Multi-tenant isolation and Quota enforcement using live LLM models in sandboxed environments.
+The project follows a strict Single Responsibility Principle (SRP) testing architecture, splitting tests into two domains:
+* **Engine Tests (`tests/engine/`):** Lightning-fast, cost-zero tests that mock the Google APIs. They verify that the Python backend correctly compiles PDFs into traces, resolves URL citations, and injects hotfixes into the knowledge base.
+* **Model Tests (`tests/model/`):** Live tests against the Gemini API that evaluate the LLM's cognitive performance (e.g., verifying it obeys citation formatting and correctly recalls facts).
 
 ---
 
@@ -119,15 +121,18 @@ python src/start_server.py
 │   ├── sessions/           # Live user session mappings and histories.
 │   └── master_session.json # The master session used for context cloning.
 └── src/                    # Source code modularized by domain.
-    ├── crawler.py                    # Interacts with Moodle to map courses and download PDFs.
-    ├── create_master_session.py      # Merges JSON traces into KB and primes the master session.
-    ├── create_document_traces.py     # Processes raw PDFs to extract insights into JSON traces.
-    ├── start_server.py               # Hosts the Web UI, API endpoints, and manages session cloning.
-    └── utils/                        # Shared helper modules (CLI wrappers, config, stats).
-        ├── gemini_headless_adapter.py # Thin adapter for the gemini-cli-headless PyPI package.
-        ├── calc_stats.py             # Calculates LLM token usage and estimated API costs.
-        ├── config.py                 # Centralized configuration loader and logging setup.
-        └── ...                       # Additional temporary inspection and mapping utilities.
+    ├── api/                  # FastAPI route controllers (admin, chat, config).
+    ├── services/             # Core services (e.g., storage.py for session state).
+    ├── crawler.py            # Interacts with Moodle to map courses and download PDFs.
+    ├── create_master_session.py # Merges JSON traces into KB and primes the master session.
+    ├── create_document_traces.py # Processes raw PDFs to extract insights into JSON traces.
+    ├── main.py               # Main FastAPI application assembly.
+    ├── start_server.py       # Server entrypoint and background worker manager.
+    └── utils/                # Shared helper modules.
+        ├── gemini_client.py  # Wrapper for the gemini-cli-headless PyPI package.
+        ├── calc_stats.py     # Calculates LLM token usage and estimated API costs.
+        ├── config.py         # Centralized configuration loader and logging setup.
+        └── ...               # Additional temporary inspection and mapping utilities.
 ```
 
 ## 📊 Cost Optimization & Analytics
