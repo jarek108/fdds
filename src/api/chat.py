@@ -92,8 +92,12 @@ async def ask_question(request: dict):
         # 3. Headless Question Answering
         start_time = time.time()
         
-        # Get System Instruction from the session data itself
-        system_instruction = session_data.get("systemInstruction", "")
+        # Load System Instruction from the compiled artifact
+        instruction_path = PATHS['master_system_instruction']
+        system_instruction = ""
+        if os.path.exists(instruction_path):
+            with open(instruction_path, 'r', encoding='utf-8') as f:
+                system_instruction = f.read()
 
         session = run_gemini_cli_headless(
             prompt=user_query,

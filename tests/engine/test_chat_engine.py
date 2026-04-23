@@ -18,13 +18,18 @@ def test_ask_question_injects_persona(mock_copy, mock_run, test_workspace):
     # 1. Setup: Create a fake master knowledge base
     persona_content = "# FAKE SYSTEM INSTRUCTION\nThis is the FDDS persona."
     
-    # Setup mock master session file containing the instruction
+    # Setup mock master system instruction file
+    instruction_path = test_workspace["paths"]["master_system_instruction"]
+    os.makedirs(os.path.dirname(instruction_path), exist_ok=True)
+    with open(instruction_path, "w", encoding="utf-8") as f:
+        f.write(persona_content)
+
+    # Setup mock master session file
     master_session_path = test_workspace["paths"]["master_session_file"]
     os.makedirs(os.path.dirname(master_session_path), exist_ok=True)
     with open(master_session_path, "w", encoding="utf-8") as f:
         json.dump({
-            "sessionId": "master-id",
-            "systemInstruction": persona_content
+            "sessionId": "master-id"
         }, f)
 
     # 2. Setup mock response
@@ -56,7 +61,7 @@ def test_ask_question_injects_persona(mock_copy, mock_run, test_workspace):
     assert mock_run.called
     _, kwargs = mock_run.call_args
     
-    # CRITICAL: Verify the persona is being injected from JSON
+    # CRITICAL: Verify the persona is being injected from the .md file
     assert kwargs["system_instruction_override"] == persona_content
     assert kwargs["allowed_tools"] == []
     assert kwargs["isolate_from_hierarchical_pollution"] is True
