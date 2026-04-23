@@ -179,7 +179,7 @@ def create_master_session(trace_dir: str = None, docs_dir: str = None):
         model_id=config["answer_model"],
         system_instruction_override="".join(llm_kb_parts),
         allowed_tools=[],
-        stream_output=True,
+        stream_output=False,
         isolate_from_hierarchical_pollution=True,
         extra_args=["--admin-policy", policy_path]
     )
