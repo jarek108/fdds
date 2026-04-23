@@ -59,14 +59,18 @@ def test_workspace():
                 # We must also patch create_master_session and others if they import PATHS
                 with patch("src.create_master_session.PATHS", mock_paths):
                     with patch("src.create_document_traces.PATHS", mock_paths):
-                        yield {
-                            "root": tmp_dir,
-                            "docs": docs_dir,
-                            "traces": traces_dir,
-                            "sessions": sessions_dir,
-                            "config": config,
-                            "paths": mock_paths
-                        }
+                        with patch("src.api.chat.PATHS", mock_paths):
+                            with patch("src.api.admin.PATHS", mock_paths):
+                                with patch("src.api.config.PATHS", mock_paths):
+                                    with patch("src.services.storage.PATHS", mock_paths):
+                                        yield {
+                                            "root": tmp_dir,
+                                            "docs": docs_dir,
+                                            "traces": traces_dir,
+                                            "sessions": sessions_dir,
+                                            "config": config,
+                                            "paths": mock_paths
+                                        }
 
 @pytest.fixture
 def mock_env():

@@ -70,6 +70,8 @@ async def ask_question(request: dict):
             audio_url = f"/audio/{audio_filename}?chatId={chat_id}"
             
             try:
+                api_key = os.environ.get("GEMINI_API_KEY")
+                genai.configure(api_key=api_key)
                 uploaded = genai.upload_file(path=audio_path)
                 m = genai.GenerativeModel("gemini-1.5-flash") # Updated to stable model
                 res = m.generate_content(["Transcribe this audio strictly. Return only the text.", uploaded])
@@ -81,10 +83,19 @@ async def ask_question(request: dict):
 
         # 3. Headless Question Answering
         start_time = time.time()
+        
+        # Load System Instruction (Knowledge Base)
+        kb_path = PATHS['master_knowledge_base']
+        system_instruction = ""
+        if os.path.exists(kb_path):
+            with open(kb_path, 'r', encoding='utf-8') as f:
+                system_instruction = f.read()
+
         session = run_gemini_cli_headless(
             prompt=user_query,
             model_id=model,
             session_to_resume=user_session_file,
+            system_instruction_override=system_instruction,
             stream_output=False,
             allowed_tools=[],
             isolate_from_hierarchical_pollution=True
