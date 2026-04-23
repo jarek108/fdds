@@ -1,8 +1,14 @@
 import os
+import sys
+
+# Add project root to sys.path immediately to ensure 'src' package is found
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 import json
 import logging
 import argparse
-import sys
 import urllib.parse
 import shutil
 import time
@@ -13,15 +19,13 @@ from typing import List, Dict, Any
 from dotenv import load_dotenv
 
 # Load environment variables
-load_dotenv(os.path.join(os.path.dirname(__file__), '../config/.env'))
+load_dotenv(os.path.join(project_root, 'config/.env'))
 
 # --- FAIL FAST: API Key Check ---
 if not os.environ.get("GEMINI_API_KEY"):
     print("FATAL: GEMINI_API_KEY environment variable is not set.")
     sys.exit(1)
 
-# Add project root to sys.path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
 from gemini_cli_headless import run_gemini_cli_headless
 from src.utils.config import get_config, setup_logging, PATHS
 from src.utils.hashes import get_or_create_hash_file
@@ -188,13 +192,17 @@ def create_master_session(trace_dir: str = None, docs_dir: str = None):
     
     # Stats
     s = parse_session_stats(session.stats, config["answer_model"])
+    
+    # Ensure consistent path separators for fingerprinting (replace \ with /)
+    fingerprint_list = sorted([f"{d['current_rel_path'].replace(os.sep, '/')}:{d.get('source_hash','')}" for d in all_docs])
+    
     kb_stats = {
         "token_count": s.get("input", 0) + s.get("cached", 0),
         "doc_count": len(all_docs),
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
         "model": config["answer_model"],
-        "trace_dir": os.path.relpath(trace_dir, project_root),
-        "fingerprint_hash": hashlib.sha256(json.dumps(sorted([f"{d['current_rel_path']}:{d.get('source_hash','')}" for d in all_docs])).encode('utf-8')).hexdigest()
+        "trace_dir": os.path.relpath(trace_dir, project_root).replace(os.sep, '/'),
+        "fingerprint_hash": hashlib.sha256(json.dumps(fingerprint_list).encode('utf-8')).hexdigest()
     }
     
     stats_path = PATHS['kb_stats']
