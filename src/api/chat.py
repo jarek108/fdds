@@ -102,9 +102,11 @@ async def ask_question(request: ChatRequest):
                         raise RuntimeError("Audio file processing failed on Google side.")
                     time.sleep(1)
                 
-                m = genai.GenerativeModel("gemini-1.5-flash")
+                transcription_model_name = config.get("transcription_model", "gemini-2.5-flash")
+                m = genai.GenerativeModel(transcription_model_name)
                 res = m.generate_content(["Transcribe this audio strictly. Return only the text in Polish.", uploaded])
                 transcription = res.text.strip()
+
                 
                 if transcription:
                     logger.info(f"Transcription successful: {transcription[:50]}...")
