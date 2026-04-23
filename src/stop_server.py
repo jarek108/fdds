@@ -3,12 +3,15 @@ import sys
 import argparse
 import subprocess
 
+# Add project root to sys.path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
+from src.utils.config import PATHS
+
 def stop_server(port):
-    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../'))
-    pid_file_path = os.path.join(project_root, f'data/run/server_{port}.pid')
+    pid_file_path = os.path.join(PATHS['run_dir'], f'server_{port}.pid')
     
     if not os.path.exists(pid_file_path):
-        print(f"No PID file found for port {port}. Server might not be running via tools.")
+        print(f"No PID file found for port {port} at {pid_file_path}. Server might not be running via tools.")
         return
 
     with open(pid_file_path, 'r') as f:
@@ -21,6 +24,7 @@ def stop_server(port):
         if os.name == 'nt':
             subprocess.run(['taskkill', '/F', '/T', '/PID', str(pid)], check=True, capture_output=True)
         else:
+            import signal
             os.kill(pid, signal.SIGTERM)
         print(f"Server stopped successfully.")
     except Exception as e:

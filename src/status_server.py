@@ -1,13 +1,17 @@
 import os
+import sys
 import argparse
 import subprocess
 
+# Add project root to sys.path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
+from src.utils.config import PATHS
+
 def check_status(port):
-    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../'))
-    pid_file_path = os.path.join(project_root, f'data/run/server_{port}.pid')
+    pid_file_path = os.path.join(PATHS['run_dir'], f'server_{port}.pid')
     
     if not os.path.exists(pid_file_path):
-        print(f"Status: Server on port {port} is NOT running (no PID file).")
+        print(f"Status: Server on port {port} is NOT running (no PID file at {pid_file_path}).")
         return
 
     with open(pid_file_path, 'r') as f:
@@ -18,7 +22,7 @@ def check_status(port):
         result = subprocess.run(['tasklist', '/FI', f'PID eq {pid}'], capture_output=True, text=True)
         if pid in result.stdout:
             print(f"Status: Server on port {port} is RUNNING (PID: {pid}).")
-            log_file = os.path.join(project_root, f'logs/server_{port}.log')
+            log_file = os.path.join(PATHS['server_logs_dir'], f'server_{port}.log')
             if os.path.exists(log_file):
                 print(f"Logs: {log_file}")
         else:
