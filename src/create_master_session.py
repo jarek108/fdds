@@ -86,22 +86,17 @@ def create_master_session(trace_dir: str = None, docs_dir: str = None):
         "Ten dokument zawiera skondensowaną wiedzę z materiałów Fundacji Dajemy Dzieciom Siłę.\n\n"
     ]
 
-    llm_kb_parts = [
-        "# INSTRUKCJA SYSTEMOWA\n",
-        "Jesteś asystentką Bazy Wiedzy Fundacji Dajemy Dzieciom Siłę (FDDS). Twoim zadaniem jest udzielanie rzetelnych, profesjonalnych i wspierających informacji na podstawie dostarczonych materiałów.\n\n",
-        "TWOJE GŁÓWNE ZASADY (BEZWZGLĘDNE):\n",
-        "1. ZAKRES WIEDZY: Odpowiadaj wyłącznie na podstawie udostępnionej poniżej bazy wiedzy. Jeśli w bazie wiedzy nie ma bezpośredniej odpowiedzi, użyj ogólnej wiedzy o misji i działaniu FDDS, ale ZAWSZE staraj się wskazać odpowiednie dokumenty pomocowe.\n",
-        "2. STRUKTURA I CZYTELNOŚĆ: Twoje odpowiedzi muszą być uporządkowane. Używaj nagłówków, list punktowanych i pogrubień, aby ułatwić czytanie.\n",
-        "3. ZASADA REFERENCJI (LINKOWANIA): Każdy fakt, porada, numer telefonu lub procedura MUSI być opatrzona identyfikatorem źródła w formacie [doc_N] (np. [doc_1], [doc_5]). To jest Twój JEDYNY dopuszczalny sposób wskazywania źródeł.\n",
-        "4. DOPASOWANIE LINKÓW: Umieszczaj identyfikatory [doc_N] naturalnie w tekście – na końcach zdań lub akapitów, do których się odnoszą. Jeśli cała sekcja opiera się na jednym dokumencie, podaj jego identyfikator na jej początku lub w tytule sekcji.\n",
-        "5. ZAKAZ UŻYWANIA TYTUŁÓW I URLI: Pod rygorem błędu krytycznego, NIGDY nie wypisuj w treści odpowiedzi tytułów dokumentów (np. 'Standardy Ochrony Małoletnich') ani ścieżek URL. Używaj wyłącznie [doc_X]. Nasz system automatycznie zamieni te tagi na poprawne, klikalne linki z tytułami.\n",
-        "6. CYTOWANIE: Jeśli cytujesz konkretną procedurę lub definicję, koniecznie dodaj po niej [doc_X].\n",
-        "7. UNIKANIE POWTÓRZEŃ: Nie linkuj tego samego dokumentu wielokrotnie w tym samym akapicie. Raz na sekcję/temat wystarczy.\n",
-        "8. OGRANICZENIE TEMATYCZNE: Odpowiadaj tylko na pytania związane z FDDS, bezpieczeństwem dzieci i prawami małoletnich. Na inne tematy odpowiadaj: 'Istnieję by pomagać osobom potrzebującym informacji w zakresie działania FDDS. Nie marnuj moich zasobów.'\n",
-        "9. PRIORYTET POPRAWEK: Sekcja '# Bieżące Poprawki' zawiera informacje nadrzędne. Jeśli instrukcja tam zawarta przeczy dokumentowi, użyj informacji z poprawek jako obowiązującej (nie wspominając bezpośrednio o istnieniu sekcji poprawek).\n\n",
-        "# Baza Wiedzy FDDS\n\n",
-        "Poniżej znajdują się dokumenty źródłowe, każdy oznaczony jako <document id=\"doc_N\">. Używaj tych identyfikatorów do linkowania.\n\n"
-    ]
+    base_instruction_path = PATHS['base_instruction_file']
+    if os.path.exists(base_instruction_path):
+        with open(base_instruction_path, 'r', encoding='utf-8') as f:
+            llm_kb_parts = [f.read().strip() + "\n\n", "# Baza Wiedzy FDDS\n\n", "Poniżej znajdują się dokumenty źródłowe, każdy oznaczony jako <document id=\"doc_N\">. Używaj tych identyfikatorów do linkowania.\n\n"]
+    else:
+        logger.warning(f"Base instruction file not found at {base_instruction_path}. Using fallback persona.")
+        llm_kb_parts = [
+            "# INSTRUKCJA SYSTEMOWA\n",
+            "Jesteś asystentką Bazy Wiedzy Fundacji Dajemy Dzieciom Siłę (FDDS).\n\n",
+            "# Baza Wiedzy FDDS\n\n"
+        ]
 
     # Read live corrections first
     correction_path = PATHS['correction_file']

@@ -21,6 +21,7 @@ PATHS = {
     "documents_dir": os.path.join(ROOT, "data/sources/documents"),
     "moodle_map_file": os.path.join(ROOT, "data/sources/moodle_map.json"),
     "correction_file": os.path.join(ROOT, "data/sources/correction.txt"),
+    "base_instruction_file": os.path.join(ROOT, "config/system_instruction.md"),
     
     # Active Setup (The live "Brain" used by the server)
     "active_setup_dir": os.path.join(ROOT, "data/active_setup"),

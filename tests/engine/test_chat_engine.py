@@ -12,12 +12,12 @@ client = TestClient(app)
 @patch("src.api.chat.shutil.copy2")
 def test_ask_question_injects_persona(mock_copy, mock_run, test_workspace):
     """
-    ENGINE TEST: Verifies that the /ask endpoint correctly reads the master KB
+    ENGINE TEST: Verifies that the /ask endpoint correctly reads the master system instruction
     and injects it as a system instruction override.
     """
-    # 1. Setup: Create a fake master knowledge base
-    kb_content = "# FAKE KB\nThis is the FDDS persona."
-    kb_path = test_workspace["paths"]["master_knowledge_base"]
+    # 1. Setup: Create a fake master system instruction
+    kb_content = "# FAKE SYSTEM INSTRUCTION\nThis is the FDDS persona."
+    kb_path = test_workspace["paths"]["master_system_instruction"]
     os.makedirs(os.path.dirname(kb_path), exist_ok=True)
     with open(kb_path, "w", encoding="utf-8") as f:
         f.write(kb_content)
